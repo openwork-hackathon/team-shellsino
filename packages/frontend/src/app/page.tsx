@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount, useConnect, useDisconnect, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { formatEther, parseEther, keccak256, encodePacked, toHex } from "viem";
+import { formatEther, parseEther, keccak256, encodePacked, toHex, isAddress } from "viem";
 import { injected } from "wagmi/connectors";
 
 // Contract addresses - DEPLOYED on Base! (V2 with challenges)
@@ -177,6 +177,23 @@ const COINFLIP_ABI = [
     ],
   },
   {
+    name: "games",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [
+      { name: "player1", type: "address" },
+      { name: "player2", type: "address" },
+      { name: "challenged", type: "address" },
+      { name: "betAmount", type: "uint256" },
+      { name: "player1Commit", type: "bytes32" },
+      { name: "player2Choice", type: "uint8" },
+      { name: "state", type: "uint8" },
+      { name: "createdAt", type: "uint256" },
+      { name: "winner", type: "address" },
+    ],
+  },
+  {
     name: "totalGamesPlayed",
     type: "function",
     stateMutability: "view",
@@ -347,7 +364,37 @@ const ROULETTE_ABI = [
   },
 ] as const;
 
-type Tab = "coinflip" | "roulette" | "stats";
+// Helper: Save game secret to localStorage
+function saveGameSecret(gameId: number, secret: string, choice: number) {
+  if (typeof window === 'undefined') return;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
+  secrets[gameId] = { secret, choice, timestamp: Date.now() };
+  localStorage.setItem('shellsino_secrets', JSON.stringify(secrets));
+}
+
+// Helper: Get game secret from localStorage
+function getGameSecret(gameId: number): { secret: string; choice: number } | null {
+  if (typeof window === 'undefined') return null;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
+  return secrets[gameId] || null;
+}
+
+// Helper: Remove game secret
+function removeGameSecret(gameId: number) {
+  if (typeof window === 'undefined') return;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
+  delete secrets[gameId];
+  localStorage.setItem('shellsino_secrets', JSON.stringify(secrets));
+}
+
+// Helper: Get all saved secrets
+function getAllSecrets(): Record<number, { secret: string; choice: number; timestamp: number }> {
+  if (typeof window === 'undefined') return {};
+  return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
+}
+
+type Tab = "coinflip" | "roulette" | "mygames" | "stats";
+type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
   const { address, isConnected } = useAccount();
@@ -372,6 +419,16 @@ export default function CasinoHome() {
     functionName: "balanceOf",
     args: address ? [address] : undefined,
   });
+
+  // Get pending challenges count for badge
+  const { data: pendingChallengesData } = useReadContract({
+    address: COINFLIP_CONTRACT,
+    abi: COINFLIP_ABI,
+    functionName: "getPendingChallenges",
+    args: address ? [address] : undefined,
+  });
+
+  const pendingCount = pendingChallengesData?.[0]?.length || 0;
 
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-gray-100">
@@ -440,18 +497,24 @@ export default function CasinoHome() {
               {[
                 { id: "coinflip" as Tab, label: "🪙 Coinflip" },
                 { id: "roulette" as Tab, label: "💀 Roulette" },
+                { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-[2px] ${
+                  className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-[2px] relative ${
                     activeTab === tab.id
                       ? "border-red-500 text-red-400"
                       : "border-transparent text-gray-400 hover:text-gray-200"
                   }`}
                 >
                   {tab.label}
+                  {tab.badge && tab.badge > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                      {tab.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -459,6 +522,7 @@ export default function CasinoHome() {
             {/* Tab Content */}
             {activeTab === "coinflip" && <CoinflipGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "roulette" && <RouletteGame address={address!} onBalanceChange={refetchBalance} />}
+            {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
           </>
         )}
@@ -772,11 +836,14 @@ function AgentVerification({
 }
 
 function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
+  const [subTab, setSubTab] = useState<CoinflipSubTab>("play");
   const [betAmount, setBetAmount] = useState("10");
   const [selectedChoice, setSelectedChoice] = useState<0 | 1>(0);
-  const [secret, setSecret] = useState<`0x${string}` | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [joinChoice, setJoinChoice] = useState<0 | 1>(0);
+  const [challengeAddress, setChallengeAddress] = useState("");
+  const [showCreateSuccess, setShowCreateSuccess] = useState(false);
+  const [lastCreatedGameId, setLastCreatedGameId] = useState<number | null>(null);
 
   // Check allowance
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -797,7 +864,7 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
   const openGames = openGamesData ? openGamesData[0].map((id, i) => ({
     id: Number(id),
     ...openGamesData[1][i],
-  })).filter(g => g.player1 !== "0x0000000000000000000000000000000000000000") : [];
+  })).filter(g => g.player1 !== "0x0000000000000000000000000000000000000000" && g.challenged === "0x0000000000000000000000000000000000000000") : [];
 
   // Approve
   const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
@@ -805,7 +872,11 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
 
   // Create game
   const { writeContract: createGame, data: createHash, isPending: isCreating } = useWriteContract();
-  const { isSuccess: createSuccess } = useWaitForTransactionReceipt({ hash: createHash });
+  const { isSuccess: createSuccess, data: createReceipt } = useWaitForTransactionReceipt({ hash: createHash });
+
+  // Challenge agent
+  const { writeContract: challengeAgent, data: challengeHash, isPending: isChallenging } = useWriteContract();
+  const { isSuccess: challengeSuccess } = useWaitForTransactionReceipt({ hash: challengeHash });
 
   // Join game
   const { writeContract: joinGame, data: joinHash, isPending: isJoining } = useWriteContract();
@@ -821,11 +892,15 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
   }, [approveSuccess]);
 
   useEffect(() => {
-    if (createSuccess || joinSuccess) {
+    if (createSuccess || joinSuccess || challengeSuccess) {
       refetchGames();
       onBalanceChange();
+      if (createSuccess || challengeSuccess) {
+        setShowCreateSuccess(true);
+        setTimeout(() => setShowCreateSuccess(false), 5000);
+      }
     }
-  }, [createSuccess, joinSuccess]);
+  }, [createSuccess, joinSuccess, challengeSuccess]);
 
   // Auto refresh games
   useEffect(() => {
@@ -844,15 +919,40 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
 
   const handleCreateGame = () => {
     const randomSecret = toHex(crypto.getRandomValues(new Uint8Array(32)));
-    setSecret(randomSecret as `0x${string}`);
-    
     const commitment = keccak256(encodePacked(["uint8", "bytes32"], [selectedChoice, randomSecret as `0x${string}`]));
+    
+    // We'll save the secret after the tx confirms via event or use a placeholder
+    // For now, save with a temp game ID that will be updated
+    const tempId = Date.now();
+    saveGameSecret(tempId, randomSecret, selectedChoice);
+    setLastCreatedGameId(tempId);
     
     createGame({
       address: COINFLIP_CONTRACT,
       abi: COINFLIP_ABI,
       functionName: "createGame",
       args: [parseEther(betAmount), commitment],
+    });
+  };
+
+  const handleChallengeAgent = () => {
+    if (!isAddress(challengeAddress)) {
+      alert("Invalid address");
+      return;
+    }
+    
+    const randomSecret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const commitment = keccak256(encodePacked(["uint8", "bytes32"], [selectedChoice, randomSecret as `0x${string}`]));
+    
+    const tempId = Date.now();
+    saveGameSecret(tempId, randomSecret, selectedChoice);
+    setLastCreatedGameId(tempId);
+    
+    challengeAgent({
+      address: COINFLIP_CONTRACT,
+      abi: COINFLIP_ABI,
+      functionName: "challengeAgent",
+      args: [parseEther(betAmount), commitment, challengeAddress as `0x${string}`],
     });
   };
 
@@ -867,19 +967,133 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
 
   return (
     <div className="space-y-6">
+      {/* Sub-navigation */}
+      <div className="flex gap-2">
+        {[
+          { id: "play" as CoinflipSubTab, label: "🎲 Play" },
+          { id: "challenge" as CoinflipSubTab, label: "⚔️ Challenge" },
+          { id: "games" as CoinflipSubTab, label: "📋 Open Games" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={`px-4 py-2 text-sm rounded-lg transition ${
+              subTab === tab.id
+                ? "bg-red-500/20 text-red-400 border border-red-500/50"
+                : "bg-[#1a1a1b] text-gray-400 border border-gray-800 hover:border-gray-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Success notification */}
+      {showCreateSuccess && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-2xl">✅</span>
+          <div>
+            <p className="font-bold text-green-400">Game Created!</p>
+            <p className="text-sm text-gray-400">Your secret has been saved. Go to &quot;My Games&quot; to manage.</p>
+          </div>
+        </div>
+      )}
+
       {/* Warning banner */}
       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-center text-sm text-yellow-400">
         ⚠️ Remember: You can lose your $SHELL. Only bet what you can afford to lose!
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Create Game */}
+      {subTab === "play" && (
         <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            🪙 Create Game
+            🪙 Create Open Game
           </h3>
+          <p className="text-sm text-gray-400 mb-4">Create a game that anyone can join</p>
 
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Bet Amount ($SHELL)</label>
+              <input
+                type="number"
+                value={betAmount}
+                onChange={(e) => setBetAmount(e.target.value)}
+                min="1"
+                max="1000"
+                className="w-full px-4 py-3 bg-[#272729] rounded border border-gray-700 focus:border-red-500 focus:outline-none font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Your Secret Pick (hidden until reveal)</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setSelectedChoice(0)}
+                  className={`py-3 rounded font-medium transition ${
+                    selectedChoice === 0
+                      ? "bg-red-500/20 border-2 border-red-500 text-red-400"
+                      : "bg-[#272729] border border-gray-700 hover:border-gray-600"
+                  }`}
+                >
+                  🌕 Heads
+                </button>
+                <button
+                  onClick={() => setSelectedChoice(1)}
+                  className={`py-3 rounded font-medium transition ${
+                    selectedChoice === 1
+                      ? "bg-red-500/20 border-2 border-red-500 text-red-400"
+                      : "bg-[#272729] border border-gray-700 hover:border-gray-600"
+                  }`}
+                >
+                  🌑 Tails
+                </button>
+              </div>
+            </div>
+
+            {needsApproval ? (
+              <button
+                onClick={handleApprove}
+                disabled={isApproving}
+                className="w-full py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 rounded font-medium transition"
+              >
+                {isApproving ? "Approving..." : "Approve $SHELL"}
+              </button>
+            ) : (
+              <button
+                onClick={handleCreateGame}
+                disabled={isCreating || !betAmount}
+                className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-gray-700 rounded font-medium transition"
+              >
+                {isCreating ? "Creating..." : `Create Game (${betAmount} $SHELL)`}
+              </button>
+            )}
+            
+            <p className="text-xs text-gray-500">
+              💡 Your pick is hidden. When someone joins, you&apos;ll need to reveal to resolve the game.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {subTab === "challenge" && (
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+            ⚔️ Challenge an Agent
+          </h3>
+          <p className="text-sm text-gray-400 mb-4">Call out a specific agent. Only they can accept!</p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Opponent Address</label>
+              <input
+                type="text"
+                value={challengeAddress}
+                onChange={(e) => setChallengeAddress(e.target.value)}
+                placeholder="0x..."
+                className="w-full px-4 py-3 bg-[#272729] rounded border border-gray-700 focus:border-red-500 focus:outline-none font-mono text-sm"
+              />
+            </div>
+
             <div>
               <label className="block text-sm text-gray-400 mb-2">Bet Amount ($SHELL)</label>
               <input
@@ -928,38 +1142,28 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
               </button>
             ) : (
               <button
-                onClick={handleCreateGame}
-                disabled={isCreating || !betAmount}
-                className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-gray-700 rounded font-medium transition"
+                onClick={handleChallengeAgent}
+                disabled={isChallenging || !betAmount || !challengeAddress}
+                className="w-full py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-700 rounded font-medium transition"
               >
-                {isCreating ? "Creating..." : `Create (${betAmount} $SHELL)`}
+                {isChallenging ? "Sending Challenge..." : `⚔️ Send Challenge (${betAmount} $SHELL)`}
               </button>
             )}
-            
-            {secret && (
-              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
-                <p className="text-yellow-400 mb-1">⚠️ Save this secret to reveal later:</p>
-                <code className="text-yellow-300 break-all">{secret}</code>
-              </div>
-            )}
-            
-            <p className="text-xs text-gray-500">
-              If opponent matches your pick, you win the pot!
-            </p>
           </div>
         </div>
+      )}
 
-        {/* Open Games */}
+      {subTab === "games" && (
         <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            ⚔️ Open Games
+            📋 Open Games
             <button onClick={() => refetchGames()} className="ml-auto text-xs text-gray-400 hover:text-red-400">
               refresh
             </button>
           </h3>
 
           {/* Join choice selector */}
-          <div className="mb-4">
+          <div className="mb-4 p-3 bg-[#272729] rounded-lg">
             <label className="block text-xs text-gray-500 mb-2">Your pick when joining:</label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -967,7 +1171,7 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
                 className={`py-2 text-sm rounded transition ${
                   joinChoice === 0
                     ? "bg-red-500/20 border border-red-500 text-red-400"
-                    : "bg-[#272729] border border-gray-700"
+                    : "bg-[#1a1a1b] border border-gray-700"
                 }`}
               >
                 🌕 Heads
@@ -977,7 +1181,7 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
                 className={`py-2 text-sm rounded transition ${
                   joinChoice === 1
                     ? "bg-red-500/20 border border-red-500 text-red-400"
-                    : "bg-[#272729] border border-gray-700"
+                    : "bg-[#1a1a1b] border border-gray-700"
                 }`}
               >
                 🌑 Tails
@@ -1026,7 +1230,340 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// My Games Page - View and manage your active games
+function MyGamesPage({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
+  const [revealSecret, setRevealSecret] = useState("");
+  const [revealChoice, setRevealChoice] = useState<0 | 1>(0);
+  const [revealGameId, setRevealGameId] = useState<number | null>(null);
+
+  // Get sent challenges (games I created)
+  const { data: sentChallengesData, refetch: refetchSent } = useReadContract({
+    address: COINFLIP_CONTRACT,
+    abi: COINFLIP_ABI,
+    functionName: "getSentChallenges",
+    args: [address],
+  });
+
+  // Get pending challenges (challenges to me)
+  const { data: pendingChallengesData, refetch: refetchPending } = useReadContract({
+    address: COINFLIP_CONTRACT,
+    abi: COINFLIP_ABI,
+    functionName: "getPendingChallenges",
+    args: [address],
+  });
+
+  // Get open games to find my games
+  const { data: openGamesData, refetch: refetchOpen } = useReadContract({
+    address: COINFLIP_CONTRACT,
+    abi: COINFLIP_ABI,
+    functionName: "getOpenGames",
+    args: [BigInt(0), BigInt(50)],
+  });
+
+  // Reveal and resolve
+  const { writeContract: reveal, data: revealHash, isPending: isRevealing } = useWriteContract();
+  const { isSuccess: revealSuccess } = useWaitForTransactionReceipt({ hash: revealHash });
+
+  // Join game (for accepting challenges)
+  const { writeContract: joinGame, data: joinHash, isPending: isJoining } = useWriteContract();
+  const { isSuccess: joinSuccess } = useWaitForTransactionReceipt({ hash: joinHash });
+
+  // Cancel game
+  const { writeContract: cancelGame, data: cancelHash, isPending: isCanceling } = useWriteContract();
+  const { isSuccess: cancelSuccess } = useWaitForTransactionReceipt({ hash: cancelHash });
+
+  useEffect(() => {
+    if (revealSuccess || joinSuccess || cancelSuccess) {
+      refetchSent();
+      refetchPending();
+      refetchOpen();
+      onBalanceChange();
+      setRevealGameId(null);
+    }
+  }, [revealSuccess, joinSuccess, cancelSuccess]);
+
+  // Auto refresh
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetchSent();
+      refetchPending();
+      refetchOpen();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Parse games
+  const sentChallenges = sentChallengesData ? sentChallengesData[0].map((id, i) => ({
+    id: Number(id),
+    ...sentChallengesData[1][i],
+  })).filter(g => g.player1 !== "0x0000000000000000000000000000000000000000") : [];
+
+  const pendingChallenges = pendingChallengesData ? pendingChallengesData[0].map((id, i) => ({
+    id: Number(id),
+    ...pendingChallengesData[1][i],
+  })).filter(g => g.player1 !== "0x0000000000000000000000000000000000000000") : [];
+
+  // My open games (I created, waiting for opponent)
+  const myOpenGames = openGamesData ? openGamesData[0].map((id, i) => ({
+    id: Number(id),
+    ...openGamesData[1][i],
+  })).filter(g => g.player1.toLowerCase() === address.toLowerCase() && g.state === 0) : [];
+
+  // Games waiting for my reveal (opponent joined, I need to reveal)
+  const gamesNeedingReveal = openGamesData ? openGamesData[0].map((id, i) => ({
+    id: Number(id),
+    ...openGamesData[1][i],
+  })).filter(g => g.player1.toLowerCase() === address.toLowerCase() && g.state === 1) : [];
+
+  const handleReveal = (gameId: number) => {
+    const saved = getGameSecret(gameId);
+    if (saved) {
+      reveal({
+        address: COINFLIP_CONTRACT,
+        abi: COINFLIP_ABI,
+        functionName: "revealAndResolve",
+        args: [BigInt(gameId), saved.choice as 0 | 1, saved.secret as `0x${string}`],
+      });
+    } else {
+      setRevealGameId(gameId);
+    }
+  };
+
+  const handleManualReveal = () => {
+    if (!revealGameId || !revealSecret) return;
+    reveal({
+      address: COINFLIP_CONTRACT,
+      abi: COINFLIP_ABI,
+      functionName: "revealAndResolve",
+      args: [BigInt(revealGameId), revealChoice, revealSecret as `0x${string}`],
+    });
+  };
+
+  const handleAcceptChallenge = (gameId: number, choice: 0 | 1) => {
+    joinGame({
+      address: COINFLIP_CONTRACT,
+      abi: COINFLIP_ABI,
+      functionName: "joinGame",
+      args: [BigInt(gameId), choice],
+    });
+  };
+
+  const handleCancel = (gameId: number) => {
+    cancelGame({
+      address: COINFLIP_CONTRACT,
+      abi: COINFLIP_ABI,
+      functionName: "cancelGame",
+      args: [BigInt(gameId)],
+    });
+  };
+
+  const allSecrets = getAllSecrets();
+
+  return (
+    <div className="space-y-6">
+      {/* Pending challenges to me */}
+      {pendingChallenges.length > 0 && (
+        <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-5">
+          <h3 className="text-lg font-bold mb-4 text-orange-400">⚔️ Incoming Challenges ({pendingChallenges.length})</h3>
+          <div className="space-y-3">
+            {pendingChallenges.map((game) => (
+              <div key={game.id} className="bg-[#1a1a1b] rounded-lg p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <div>
+                    <span className="font-mono text-sm text-gray-300">
+                      {game.player1.slice(0, 6)}...{game.player1.slice(-4)}
+                    </span>
+                    <span className="text-gray-500 mx-2">challenged you!</span>
+                  </div>
+                  <div className="text-red-400 font-bold">
+                    {parseFloat(formatEther(game.betAmount)).toFixed(1)} $SHELL
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleAcceptChallenge(game.id, 0)}
+                    disabled={isJoining}
+                    className="py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/50 rounded text-yellow-400 text-sm transition"
+                  >
+                    🌕 Accept (Heads)
+                  </button>
+                  <button
+                    onClick={() => handleAcceptChallenge(game.id, 1)}
+                    disabled={isJoining}
+                    className="py-2 bg-gray-500/20 hover:bg-gray-500/30 border border-gray-500/50 rounded text-gray-400 text-sm transition"
+                  >
+                    🌑 Accept (Tails)
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Games needing my reveal */}
+      {gamesNeedingReveal.length > 0 && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-5">
+          <h3 className="text-lg font-bold mb-4 text-green-400">🎯 Reveal to Resolve ({gamesNeedingReveal.length})</h3>
+          <p className="text-sm text-gray-400 mb-4">Opponent has picked! Reveal your choice to see who wins.</p>
+          <div className="space-y-3">
+            {gamesNeedingReveal.map((game) => {
+              const saved = getGameSecret(game.id);
+              return (
+                <div key={game.id} className="bg-[#1a1a1b] rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <span className="text-sm text-gray-400">Game #{game.id}</span>
+                      <span className="mx-2 text-gray-600">vs</span>
+                      <span className="font-mono text-sm text-gray-300">
+                        {game.player2.slice(0, 6)}...{game.player2.slice(-4)}
+                      </span>
+                    </div>
+                    <div className="text-red-400 font-bold">
+                      {parseFloat(formatEther(game.betAmount)).toFixed(1)} $SHELL
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-400">
+                      They picked: {game.player2Choice === 0 ? "🌕 Heads" : "🌑 Tails"}
+                    </span>
+                    {saved && (
+                      <span className="text-xs text-green-400 bg-green-500/10 px-2 py-1 rounded">
+                        Your pick: {saved.choice === 0 ? "🌕" : "🌑"} (saved)
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleReveal(game.id)}
+                    disabled={isRevealing}
+                    className="mt-3 w-full py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-700 rounded font-medium transition"
+                  >
+                    {isRevealing ? "Revealing..." : "🎲 Reveal & Resolve"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Manual reveal modal */}
+      {revealGameId !== null && (
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-yellow-500/50">
+          <h3 className="text-lg font-bold mb-4 text-yellow-400">🔑 Manual Reveal for Game #{revealGameId}</h3>
+          <p className="text-sm text-gray-400 mb-4">Secret not found locally. Enter it manually:</p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Your Secret (bytes32)</label>
+              <input
+                type="text"
+                value={revealSecret}
+                onChange={(e) => setRevealSecret(e.target.value)}
+                placeholder="0x..."
+                className="w-full px-4 py-3 bg-[#272729] rounded border border-gray-700 focus:border-yellow-500 focus:outline-none font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Your Choice</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setRevealChoice(0)}
+                  className={`py-2 rounded transition ${revealChoice === 0 ? "bg-yellow-500/20 border border-yellow-500" : "bg-[#272729] border border-gray-700"}`}
+                >
+                  🌕 Heads
+                </button>
+                <button
+                  onClick={() => setRevealChoice(1)}
+                  className={`py-2 rounded transition ${revealChoice === 1 ? "bg-yellow-500/20 border border-yellow-500" : "bg-[#272729] border border-gray-700"}`}
+                >
+                  🌑 Tails
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleManualReveal}
+                disabled={isRevealing || !revealSecret}
+                className="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-700 rounded font-medium transition"
+              >
+                {isRevealing ? "Revealing..." : "Reveal"}
+              </button>
+              <button
+                onClick={() => setRevealGameId(null)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* My open games */}
+      <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+        <h3 className="text-lg font-bold mb-4">🎮 My Open Games</h3>
+        {myOpenGames.length === 0 && sentChallenges.filter(c => c.state === 0).length === 0 ? (
+          <p className="text-gray-500 text-center py-4">No active games. Create one in Coinflip tab!</p>
+        ) : (
+          <div className="space-y-3">
+            {[...myOpenGames, ...sentChallenges.filter(c => c.state === 0)].map((game) => (
+              <div key={game.id} className="bg-[#272729] rounded-lg p-4 flex justify-between items-center">
+                <div>
+                  <div className="text-sm text-gray-400">
+                    Game #{game.id}
+                    {game.challenged !== "0x0000000000000000000000000000000000000000" && (
+                      <span className="ml-2 text-orange-400">
+                        (Challenge to {game.challenged.slice(0, 6)}...)
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-red-400 font-bold">
+                    {parseFloat(formatEther(game.betAmount)).toFixed(1)} $SHELL
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded">
+                    Waiting...
+                  </span>
+                  <button
+                    onClick={() => handleCancel(game.id)}
+                    disabled={isCanceling}
+                    className="text-xs text-red-400 hover:text-red-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Saved secrets debug */}
+      {Object.keys(allSecrets).length > 0 && (
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <h3 className="text-lg font-bold mb-4 text-gray-400">🔐 Saved Secrets</h3>
+          <p className="text-xs text-gray-500 mb-3">These are stored in your browser for revealing games.</p>
+          <div className="space-y-2 text-xs font-mono">
+            {Object.entries(allSecrets).map(([id, data]) => (
+              <div key={id} className="bg-[#272729] p-2 rounded flex justify-between items-center">
+                <span className="text-gray-400">Game {id}: {data.choice === 0 ? "🌕" : "🌑"}</span>
+                <button
+                  onClick={() => removeGameSecret(Number(id))}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1034,7 +1571,6 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
 // 💀 RUSSIAN ROULETTE - 6 enter, 1 dies, 5 split the pot
 function RouletteGame({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
   const [betAmount, setBetAmount] = useState("10");
-  const [selectedRound, setSelectedRound] = useState<number | null>(null);
   
   // Check if registered on Roulette contract
   const { data: isRegistered } = useReadContract({
@@ -1286,7 +1822,7 @@ function RoundCard({ roundId }: { roundId: bigint }) {
 
   if (!round) return null;
 
-  const [betAmount, players, playerCount, state, eliminated, prizePerWinner] = round;
+  const [betAmount, players, playerCount, state, eliminated] = round;
   const filledSlots = Number(playerCount);
   const isComplete = state === 2;
 
