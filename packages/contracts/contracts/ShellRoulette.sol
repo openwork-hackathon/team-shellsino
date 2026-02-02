@@ -358,13 +358,17 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @notice Find open PUBLIC rounds for a bet amount
+     * @notice Find open PUBLIC rounds for a bet amount (Fix #63: bounded scan)
      */
     function getOpenRounds(uint256 betAmount, uint256 limit) external view returns (uint256[] memory) {
         uint256[] storage allRounds = openRoundsByBet[betAmount];
         
+        // Bound limit and scan range to prevent DoS
+        if (limit > 50) limit = 50;
+        uint256 maxScan = allRounds.length > 200 ? 200 : allRounds.length;
+        
         uint256 openCount = 0;
-        for (uint256 i = 0; i < allRounds.length && openCount < limit; i++) {
+        for (uint256 i = 0; i < maxScan && openCount < limit; i++) {
             Round storage round = rounds[allRounds[i]];
             if (round.state == RoundState.Open && !round.isPrivate) {
                 openCount++;
@@ -373,7 +377,7 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         
         uint256[] memory result = new uint256[](openCount);
         uint256 j = 0;
-        for (uint256 i = 0; i < allRounds.length && j < openCount; i++) {
+        for (uint256 i = 0; i < maxScan && j < openCount; i++) {
             Round storage round = rounds[allRounds[i]];
             if (round.state == RoundState.Open && !round.isPrivate) {
                 result[j++] = allRounds[i];
@@ -384,14 +388,18 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @notice Get private rounds you've been invited to
+     * @notice Get private rounds you've been invited to (Fix #63: bounded scan)
      */
     function getMyPrivateInvites(address agent) external view returns (uint256[] memory roundIds) {
         uint256[] storage invites = privateInvites[agent];
         
+        // Bound scan range to prevent DoS
+        uint256 maxScan = invites.length > 100 ? 100 : invites.length;
+        uint256 maxResults = 50;
+        
         // Count active invites
         uint256 count = 0;
-        for (uint256 i = 0; i < invites.length; i++) {
+        for (uint256 i = 0; i < maxScan && count < maxResults; i++) {
             if (rounds[invites[i]].state == RoundState.Open) {
                 count++;
             }
@@ -399,7 +407,7 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         
         roundIds = new uint256[](count);
         uint256 j = 0;
-        for (uint256 i = 0; i < invites.length && j < count; i++) {
+        for (uint256 i = 0; i < maxScan && j < count; i++) {
             if (rounds[invites[i]].state == RoundState.Open) {
                 roundIds[j++] = invites[i];
             }

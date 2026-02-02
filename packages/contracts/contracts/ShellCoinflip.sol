@@ -298,11 +298,25 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
      * @notice Get pending challenges received by an agent
      */
     function getPendingChallenges(address agent) external view returns (uint256[] memory gameIds, Game[] memory challengeGames) {
+        return getPendingChallengesPaginated(agent, 0, 50); // Default limit 50
+    }
+    
+    /**
+     * @notice Get pending challenges with pagination (Fix #63: bounded loops)
+     */
+    function getPendingChallengesPaginated(address agent, uint256 start, uint256 limit) public view returns (uint256[] memory gameIds, Game[] memory challengeGames) {
         uint256[] storage received = challengesReceived[agent];
+        if (start >= received.length) {
+            return (new uint256[](0), new Game[](0));
+        }
         
-        // Count active challenges
+        // Bound the limit to prevent DoS
+        if (limit > 100) limit = 100;
+        uint256 end = start + limit > received.length ? received.length : start + limit;
+        
+        // Count active challenges in range
         uint256 count = 0;
-        for (uint256 i = 0; i < received.length; i++) {
+        for (uint256 i = start; i < end; i++) {
             if (games[received[i]].state == GameState.Created) {
                 count++;
             }
@@ -312,7 +326,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         challengeGames = new Game[](count);
         
         uint256 index = 0;
-        for (uint256 i = 0; i < received.length && index < count; i++) {
+        for (uint256 i = start; i < end && index < count; i++) {
             uint256 gid = received[i];
             if (games[gid].state == GameState.Created) {
                 gameIds[index] = gid;
@@ -328,10 +342,24 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
      * @notice Get challenges sent by an agent (pending)
      */
     function getSentChallenges(address agent) external view returns (uint256[] memory gameIds, Game[] memory challengeGames) {
+        return getSentChallengesPaginated(agent, 0, 50); // Default limit 50
+    }
+    
+    /**
+     * @notice Get sent challenges with pagination (Fix #63: bounded loops)
+     */
+    function getSentChallengesPaginated(address agent, uint256 start, uint256 limit) public view returns (uint256[] memory gameIds, Game[] memory challengeGames) {
         uint256[] storage sent = challengesSent[agent];
+        if (start >= sent.length) {
+            return (new uint256[](0), new Game[](0));
+        }
+        
+        // Bound the limit to prevent DoS
+        if (limit > 100) limit = 100;
+        uint256 end = start + limit > sent.length ? sent.length : start + limit;
         
         uint256 count = 0;
-        for (uint256 i = 0; i < sent.length; i++) {
+        for (uint256 i = start; i < end; i++) {
             if (games[sent[i]].state == GameState.Created) {
                 count++;
             }
@@ -341,7 +369,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         challengeGames = new Game[](count);
         
         uint256 index = 0;
-        for (uint256 i = 0; i < sent.length && index < count; i++) {
+        for (uint256 i = start; i < end && index < count; i++) {
             uint256 gid = sent[i];
             if (games[gid].state == GameState.Created) {
                 gameIds[index] = gid;

@@ -320,10 +320,53 @@ contract HouseBankroll is ReentrancyGuard, Ownable {
         emit BankrollDeposited(msg.sender, amount);
     }
     
+    // Fix #65: Add timelock to emergency withdraw
+    uint256 public constant EMERGENCY_TIMELOCK = 24 hours;
+    
+    struct EmergencyRequest {
+        address token;
+        uint256 amount;
+        uint256 requestTime;
+        bool executed;
+    }
+    
+    EmergencyRequest public pendingEmergency;
+    
+    event EmergencyRequested(address token, uint256 amount, uint256 executeAfter);
+    event EmergencyCancelled();
+    event EmergencyExecuted(address token, uint256 amount);
+    
     /**
-     * @notice Emergency withdraw (owner only, for migration)
+     * @notice Request emergency withdraw (starts 24h timelock)
      */
-    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
-        IERC20(token).safeTransfer(owner(), amount);
+    function requestEmergencyWithdraw(address token, uint256 amount) external onlyOwner {
+        pendingEmergency = EmergencyRequest({
+            token: token,
+            amount: amount,
+            requestTime: block.timestamp,
+            executed: false
+        });
+        emit EmergencyRequested(token, amount, block.timestamp + EMERGENCY_TIMELOCK);
+    }
+    
+    /**
+     * @notice Cancel pending emergency withdraw
+     */
+    function cancelEmergencyWithdraw() external onlyOwner {
+        delete pendingEmergency;
+        emit EmergencyCancelled();
+    }
+    
+    /**
+     * @notice Execute emergency withdraw after timelock expires
+     */
+    function executeEmergencyWithdraw() external onlyOwner {
+        require(pendingEmergency.requestTime > 0, "No pending request");
+        require(!pendingEmergency.executed, "Already executed");
+        require(block.timestamp >= pendingEmergency.requestTime + EMERGENCY_TIMELOCK, "Timelock not expired");
+        
+        pendingEmergency.executed = true;
+        IERC20(pendingEmergency.token).safeTransfer(owner(), pendingEmergency.amount);
+        emit EmergencyExecuted(pendingEmergency.token, pendingEmergency.amount);
     }
 }
