@@ -11,6 +11,7 @@ const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11";
 const ROULETTE_CONTRACT = "0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee";
 const HOUSE_BANKROLL = "0x1BB36A7BdF4eAa8321bbB177EaFc1cf26c7E573f";
 const HOUSE_TOKEN = "0x759a72ea84e5cc7f04a59830ec8a824b036bfc8b";
+const BLACKJACK_CONTRACT = "0xE5246830e328A07CE81011B90828485afEe94646";
 
 // ERC20 ABI
 const ERC20_ABI = [
@@ -395,7 +396,7 @@ function getAllSecrets(): Record<number, { secret: string; choice: number; times
   return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
 }
 
-type Tab = "coinflip" | "roulette" | "house" | "mygames" | "stats";
+type Tab = "coinflip" | "roulette" | "blackjack" | "house" | "mygames" | "stats";
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
@@ -499,6 +500,7 @@ export default function CasinoHome() {
               {[
                 { id: "coinflip" as Tab, label: "🪙 Coinflip" },
                 { id: "roulette" as Tab, label: "💀 Roulette" },
+                { id: "blackjack" as Tab, label: "🃏 Blackjack" },
                 { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
@@ -525,6 +527,7 @@ export default function CasinoHome() {
             {/* Tab Content */}
             {activeTab === "coinflip" && <CoinflipGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "roulette" && <RouletteGame address={address!} onBalanceChange={refetchBalance} />}
+            {activeTab === "blackjack" && <BlackjackGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "house" && <HouseStaking address={address!} />}
             {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
@@ -1857,6 +1860,544 @@ function RoundCard({ roundId }: { roundId: bigint }) {
           <div className="text-xs text-gray-500 mt-1">
             {isComplete ? "Complete" : `${filledSlots}/6 players`}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Blackjack ABI
+const BLACKJACK_ABI = [
+  {
+    name: "startGame",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "betAmount", type: "uint256" },
+      { name: "commitment", type: "bytes32" },
+    ],
+    outputs: [{ name: "gameId", type: "uint256" }],
+  },
+  {
+    name: "revealAndDeal",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "gameId", type: "uint256" },
+      { name: "secret", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "hit",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "stand",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "doubleDown",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "activeGame",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "player", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getGame",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [
+      { name: "player", type: "address" },
+      { name: "state", type: "uint8" },
+      { name: "betAmount", type: "uint256" },
+      { name: "currentHandIndex", type: "uint8" },
+      { name: "dealerUpCard", type: "uint8" },
+      { name: "dealerValue", type: "uint8" },
+    ],
+  },
+  {
+    name: "getPlayerHand",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "gameId", type: "uint256" },
+      { name: "handIndex", type: "uint8" },
+    ],
+    outputs: [
+      { name: "cards", type: "uint8[]" },
+      { name: "bet", type: "uint256" },
+      { name: "value", type: "uint8" },
+      { name: "doubled", type: "bool" },
+      { name: "stood", type: "bool" },
+      { name: "busted", type: "bool" },
+      { name: "isBlackjack", type: "bool" },
+    ],
+  },
+  {
+    name: "getDealerCards",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint8[]" }],
+  },
+  {
+    name: "minBet",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "maxBet",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+// Card display helpers
+function getCardDisplay(cardIndex: number): { rank: string; suit: string; color: string } {
+  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const suits = ['♥', '♦', '♣', '♠'];
+  const rank = ranks[cardIndex % 13];
+  const suitIndex = Math.floor(cardIndex / 13);
+  const suit = suits[suitIndex];
+  const color = suitIndex < 2 ? 'text-red-500' : 'text-white';
+  return { rank, suit, color };
+}
+
+function CardComponent({ cardIndex, faceDown = false }: { cardIndex: number; faceDown?: boolean }) {
+  if (faceDown) {
+    return (
+      <div className="w-16 h-24 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg border-2 border-blue-400 flex items-center justify-center shadow-lg">
+        <span className="text-2xl">🂠</span>
+      </div>
+    );
+  }
+  const { rank, suit, color } = getCardDisplay(cardIndex);
+  return (
+    <div className="w-16 h-24 bg-white rounded-lg border-2 border-gray-300 flex flex-col items-center justify-center shadow-lg">
+      <span className={`text-xl font-bold ${color}`}>{rank}</span>
+      <span className={`text-2xl ${color}`}>{suit}</span>
+    </div>
+  );
+}
+
+// Save/load blackjack secrets
+function saveBJSecret(gameId: number, secret: string) {
+  if (typeof window === 'undefined') return;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_bj_secrets') || '{}');
+  secrets[gameId] = { secret, timestamp: Date.now() };
+  localStorage.setItem('shellsino_bj_secrets', JSON.stringify(secrets));
+}
+
+function getBJSecret(gameId: number): string | null {
+  if (typeof window === 'undefined') return null;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_bj_secrets') || '{}');
+  return secrets[gameId]?.secret || null;
+}
+
+function removeBJSecret(gameId: number) {
+  if (typeof window === 'undefined') return;
+  const secrets = JSON.parse(localStorage.getItem('shellsino_bj_secrets') || '{}');
+  delete secrets[gameId];
+  localStorage.setItem('shellsino_bj_secrets', JSON.stringify(secrets));
+}
+
+// 🃏 BLACKJACK - Player vs House
+function BlackjackGame({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
+  const [betAmount, setBetAmount] = useState("10");
+  const [pendingSecret, setPendingSecret] = useState<string | null>(null);
+
+  // Check allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: SHELL_TOKEN,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [address, BLACKJACK_CONTRACT],
+  });
+
+  // Get active game
+  const { data: activeGameId, refetch: refetchActiveGame } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "activeGame",
+    args: [address],
+  });
+
+  // Get game details if active
+  const { data: gameData, refetch: refetchGame } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "getGame",
+    args: activeGameId && activeGameId > BigInt(0) ? [activeGameId] : undefined,
+  });
+
+  // Get player hand
+  const { data: playerHand, refetch: refetchHand } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "getPlayerHand",
+    args: activeGameId && activeGameId > BigInt(0) ? [activeGameId, 0] : undefined,
+  });
+
+  // Get dealer cards
+  const { data: dealerCards, refetch: refetchDealer } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "getDealerCards",
+    args: activeGameId && activeGameId > BigInt(0) ? [activeGameId] : undefined,
+  });
+
+  // Get min/max bets
+  const { data: minBet } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "minBet",
+  });
+
+  const { data: maxBet } = useReadContract({
+    address: BLACKJACK_CONTRACT,
+    abi: BLACKJACK_ABI,
+    functionName: "maxBet",
+  });
+
+  // Approve
+  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
+  const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
+
+  // Start game
+  const { writeContract: startGame, data: startHash, isPending: isStarting } = useWriteContract();
+  const { isSuccess: startSuccess } = useWaitForTransactionReceipt({ hash: startHash });
+
+  // Reveal and deal
+  const { writeContract: revealDeal, data: revealHash, isPending: isRevealing } = useWriteContract();
+  const { isSuccess: revealSuccess } = useWaitForTransactionReceipt({ hash: revealHash });
+
+  // Hit
+  const { writeContract: hit, data: hitHash, isPending: isHitting } = useWriteContract();
+  const { isSuccess: hitSuccess } = useWaitForTransactionReceipt({ hash: hitHash });
+
+  // Stand
+  const { writeContract: stand, data: standHash, isPending: isStanding } = useWriteContract();
+  const { isSuccess: standSuccess } = useWaitForTransactionReceipt({ hash: standHash });
+
+  // Double
+  const { writeContract: double, data: doubleHash, isPending: isDoubling } = useWriteContract();
+  const { isSuccess: doubleSuccess } = useWaitForTransactionReceipt({ hash: doubleHash });
+
+  // Effects
+  useEffect(() => {
+    if (approveSuccess) refetchAllowance();
+  }, [approveSuccess]);
+
+  useEffect(() => {
+    if (startSuccess || revealSuccess || hitSuccess || standSuccess || doubleSuccess) {
+      refetchActiveGame();
+      refetchGame();
+      refetchHand();
+      refetchDealer();
+      onBalanceChange();
+    }
+  }, [startSuccess, revealSuccess, hitSuccess, standSuccess, doubleSuccess]);
+
+  // Auto-refresh game state
+  useEffect(() => {
+    if (activeGameId && activeGameId > BigInt(0)) {
+      const interval = setInterval(() => {
+        refetchGame();
+        refetchHand();
+        refetchDealer();
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeGameId]);
+
+  const betWei = parseEther(betAmount || "0");
+  const needsApproval = !allowance || allowance < betWei;
+  
+  // Game state enum: 0=None, 1=WaitingForReveal, 2=PlayerTurn, 3=DealerTurn, 4=Settled
+  const gameState = gameData?.[1] ?? 0;
+  const hasActiveGame = activeGameId && activeGameId > BigInt(0) && gameState !== 4 && gameState !== 0;
+
+  const handleApprove = () => {
+    approve({
+      address: SHELL_TOKEN,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [BLACKJACK_CONTRACT, parseEther("1000000")],
+    });
+  };
+
+  const handleStartGame = () => {
+    // Generate random secret
+    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+    const secret = BigInt('0x' + Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join(''));
+    const commitment = keccak256(encodePacked(["uint256"], [secret]));
+    
+    // Store secret temporarily
+    setPendingSecret(secret.toString());
+    
+    startGame({
+      address: BLACKJACK_CONTRACT,
+      abi: BLACKJACK_ABI,
+      functionName: "startGame",
+      args: [betWei, commitment],
+    });
+  };
+
+  const handleRevealAndDeal = () => {
+    if (!activeGameId || !pendingSecret) return;
+    
+    // Save secret to localStorage
+    saveBJSecret(Number(activeGameId), pendingSecret);
+    
+    revealDeal({
+      address: BLACKJACK_CONTRACT,
+      abi: BLACKJACK_ABI,
+      functionName: "revealAndDeal",
+      args: [activeGameId, BigInt(pendingSecret)],
+    });
+    
+    setPendingSecret(null);
+  };
+
+  const handleHit = () => {
+    if (!activeGameId) return;
+    hit({
+      address: BLACKJACK_CONTRACT,
+      abi: BLACKJACK_ABI,
+      functionName: "hit",
+      args: [activeGameId],
+    });
+  };
+
+  const handleStand = () => {
+    if (!activeGameId) return;
+    stand({
+      address: BLACKJACK_CONTRACT,
+      abi: BLACKJACK_ABI,
+      functionName: "stand",
+      args: [activeGameId],
+    });
+  };
+
+  const handleDouble = () => {
+    if (!activeGameId) return;
+    double({
+      address: BLACKJACK_CONTRACT,
+      abi: BLACKJACK_ABI,
+      functionName: "doubleDown",
+      args: [activeGameId],
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-green-900/50 to-emerald-900/50 rounded-xl p-6 border border-green-500/30">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              🃏 Blackjack
+              <span className="text-xs bg-purple-500/30 text-purple-300 px-2 py-1 rounded">PvH</span>
+            </h2>
+            <p className="text-gray-400 text-sm">Beat the dealer! Get closer to 21 without busting.</p>
+          </div>
+          <div className="text-right text-sm text-gray-400">
+            <p>3:2 Blackjack payout</p>
+            <p>1% protocol fee</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Game Area */}
+      {!hasActiveGame ? (
+        // Start new game
+        <div className="bg-[#1a1a1b] rounded-xl p-6 border border-gray-800">
+          <h3 className="font-bold text-lg mb-4">🎰 Start New Game</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Bet Amount ($SHELL)</label>
+              <input
+                type="number"
+                value={betAmount}
+                onChange={(e) => setBetAmount(e.target.value)}
+                className="w-full bg-[#272729] border border-gray-700 rounded-lg px-4 py-2 text-white"
+                min={minBet ? formatEther(minBet) : "1"}
+                max={maxBet ? formatEther(maxBet) : "1000"}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Min: {minBet ? formatEther(minBet) : "1"} | Max: {maxBet ? formatEther(maxBet) : "1000"} $SHELL
+              </p>
+            </div>
+
+            {needsApproval ? (
+              <button
+                onClick={handleApprove}
+                disabled={isApproving}
+                className="w-full py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 rounded-lg font-bold"
+              >
+                {isApproving ? "Approving..." : "Approve $SHELL"}
+              </button>
+            ) : (
+              <button
+                onClick={handleStartGame}
+                disabled={isStarting || !betAmount}
+                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 rounded-lg font-bold"
+              >
+                {isStarting ? "Starting..." : `Deal Cards (${betAmount} $SHELL)`}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : gameState === 1 ? (
+        // Waiting for reveal
+        <div className="bg-[#1a1a1b] rounded-xl p-6 border border-yellow-500/30">
+          <h3 className="font-bold text-lg mb-4 text-yellow-400">⏳ Confirm Deal</h3>
+          <p className="text-gray-400 mb-4">Click to reveal your cards and start playing!</p>
+          <button
+            onClick={handleRevealAndDeal}
+            disabled={isRevealing || !pendingSecret}
+            className="w-full py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 rounded-lg font-bold"
+          >
+            {isRevealing ? "Dealing..." : "🃏 Deal Cards"}
+          </button>
+        </div>
+      ) : (
+        // Active game
+        <div className="bg-[#0d4d2d] rounded-xl p-6 border-4 border-[#0a3d24]">
+          {/* Dealer Area */}
+          <div className="text-center mb-8">
+            <p className="text-gray-300 text-sm mb-2">DEALER {gameData?.[5] ? `(${gameData[5]})` : ''}</p>
+            <div className="flex justify-center gap-2">
+              {dealerCards && dealerCards.length > 0 ? (
+                dealerCards.map((card, i) => (
+                  <CardComponent 
+                    key={i} 
+                    cardIndex={card} 
+                    faceDown={gameState === 2 && i === 1}
+                  />
+                ))
+              ) : (
+                <>
+                  <CardComponent cardIndex={0} faceDown />
+                  <CardComponent cardIndex={0} faceDown />
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Player Area */}
+          <div className="text-center">
+            <div className="flex justify-center gap-2 mb-4">
+              {playerHand && playerHand[0] && playerHand[0].length > 0 ? (
+                playerHand[0].map((card, i) => (
+                  <CardComponent key={i} cardIndex={card} />
+                ))
+              ) : (
+                <>
+                  <CardComponent cardIndex={0} faceDown />
+                  <CardComponent cardIndex={0} faceDown />
+                </>
+              )}
+            </div>
+            <p className="text-white text-sm mb-4">
+              YOUR HAND: <span className="font-bold text-yellow-400">{playerHand?.[2] || 0}</span>
+              {playerHand?.[5] && <span className="ml-2 text-red-400">(BUST!)</span>}
+              {playerHand?.[6] && <span className="ml-2 text-yellow-400">BLACKJACK!</span>}
+            </p>
+
+            {/* Action Buttons */}
+            {gameState === 2 && !playerHand?.[4] && !playerHand?.[5] && (
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={handleHit}
+                  disabled={isHitting}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 rounded-lg font-bold"
+                >
+                  {isHitting ? "..." : "HIT"}
+                </button>
+                <button
+                  onClick={handleStand}
+                  disabled={isStanding}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 rounded-lg font-bold"
+                >
+                  {isStanding ? "..." : "STAND"}
+                </button>
+                {playerHand && playerHand[0]?.length === 2 && !playerHand[3] && (
+                  <button
+                    onClick={handleDouble}
+                    disabled={isDoubling}
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg font-bold"
+                  >
+                    {isDoubling ? "..." : "DOUBLE"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Game Over Message */}
+            {(gameState === 4 || playerHand?.[5]) && (
+              <div className="mt-4">
+                <p className="text-xl font-bold mb-2">
+                  {playerHand?.[5] ? (
+                    <span className="text-red-400">BUST! Dealer Wins</span>
+                  ) : playerHand?.[6] && gameData?.[5] !== 21 ? (
+                    <span className="text-yellow-400">BLACKJACK! You Win 3:2!</span>
+                  ) : (playerHand?.[2] || 0) > (gameData?.[5] || 0) ? (
+                    <span className="text-green-400">You Win!</span>
+                  ) : (playerHand?.[2] || 0) === (gameData?.[5] || 0) ? (
+                    <span className="text-gray-400">Push - Bet Returned</span>
+                  ) : (
+                    <span className="text-red-400">Dealer Wins</span>
+                  )}
+                </p>
+                <button
+                  onClick={() => {
+                    refetchActiveGame();
+                    refetchGame();
+                  }}
+                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+                >
+                  New Game
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Rules */}
+      <div className="bg-[#1a1a1b] rounded-xl p-5 border border-gray-800">
+        <h3 className="font-bold text-lg mb-3">📜 Rules</h3>
+        <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-400">
+          <ul className="space-y-1">
+            <li>• Closest to 21 wins without going over</li>
+            <li>• Face cards (J,Q,K) = 10</li>
+            <li>• Aces = 1 or 11</li>
+          </ul>
+          <ul className="space-y-1">
+            <li>• Blackjack (21 with 2 cards) pays 3:2</li>
+            <li>• Dealer must hit on 16, stand on 17</li>
+            <li>• Double down doubles your bet, one more card</li>
+          </ul>
         </div>
       </div>
     </div>
