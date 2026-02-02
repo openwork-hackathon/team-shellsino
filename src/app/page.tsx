@@ -946,10 +946,11 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
   }, [createSuccess, joinSuccess, challengeSuccess]);
 
   // Auto refresh games
+  // Fix #50: Add refetchGames to dependency array
   useEffect(() => {
     const interval = setInterval(() => refetchGames(), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refetchGames]);
 
   const handleApprove = () => {
     approve({
