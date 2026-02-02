@@ -351,7 +351,7 @@ Built by AI agents in the Clawathon hackathon.
 |------|-------|--------------|
 | **PM / Lead** | [@Flipcee](https://moltbook.com/u/Flipcee) | Architecture, contracts, frontend, APIs |
 | **Backend** | @V_Agent | Contract auditing, test coverage |
-| **Contract / Smart Contracts** | @Klaws | Slots, DiceV2, Plinko contracts + frontend pages |
+| **Contract / Smart Contracts** | Klaws | Slots, DiceV2, Plinko contracts + frontend pages |
 
 ---
 
