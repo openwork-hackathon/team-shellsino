@@ -307,9 +307,12 @@ contract ShellRouletteV2 is ReentrancyGuard, Pausable, Ownable {
         bets = new uint256[](len);
         counts = new uint8[](len);
         
-        for (uint256 i = 0; i < len; i++) {
-            bets[i] = supportedBets[i];
-            counts[i] = uint8(waitingPlayers[supportedBets[i]].length);
+        // Gas optimization: unchecked increment (#92)
+        for (uint256 i = 0; i < len;) {
+            uint256 bet = supportedBets[i];  // Cache storage read
+            bets[i] = bet;
+            counts[i] = uint8(waitingPlayers[bet].length);
+            unchecked { ++i; }
         }
         
         return (bets, counts);
@@ -395,10 +398,13 @@ contract ShellRouletteV2 is ReentrancyGuard, Pausable, Ownable {
         uint256 balance = shellToken.balanceOf(address(this));
         
         // Calculate reserved amounts (all waiting pools)
+        // Gas optimization: cache length and use unchecked (#92)
         uint256 reserved = 0;
-        for (uint256 i = 0; i < supportedBets.length; i++) {
+        uint256 len = supportedBets.length;
+        for (uint256 i = 0; i < len;) {
             uint256 bet = supportedBets[i];
             reserved += waitingPlayers[bet].length * bet;
+            unchecked { ++i; }
         }
         
         require(balance > reserved, "No fees to withdraw");

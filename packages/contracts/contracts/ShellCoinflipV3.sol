@@ -457,10 +457,14 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
         hasWaiting = new bool[](len);
         waitingPlayers = new address[](len);
         
-        for (uint256 i = 0; i < len; i++) {
-            bets[i] = supportedBets[i];
-            waitingPlayers[i] = matchingPool[supportedBets[i]];
-            hasWaiting[i] = waitingPlayers[i] != address(0);
+        // Gas optimization: cache array length and use unchecked increment (#92)
+        for (uint256 i = 0; i < len;) {
+            uint256 bet = supportedBets[i];  // Cache storage read
+            bets[i] = bet;
+            address waiting = matchingPool[bet];  // Single storage read
+            waitingPlayers[i] = waiting;
+            hasWaiting[i] = waiting != address(0);
+            unchecked { ++i; }
         }
         
         return (bets, hasWaiting, waitingPlayers);
@@ -524,10 +528,13 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
         
         // Calculate reserved amounts (pools + pending challenges)
         uint256 reserved = reservedChallengeBalance;  // Pending challenges (Fix #77)
-        for (uint256 i = 0; i < supportedBets.length; i++) {
-            if (matchingPool[supportedBets[i]] != address(0)) {
-                reserved += supportedBets[i];
+        uint256 len = supportedBets.length;  // Gas: cache length (#92)
+        for (uint256 i = 0; i < len;) {
+            uint256 bet = supportedBets[i];  // Cache storage read
+            if (matchingPool[bet] != address(0)) {
+                reserved += bet;
             }
+            unchecked { ++i; }
         }
         
         require(balance > reserved, "No fees to withdraw");
