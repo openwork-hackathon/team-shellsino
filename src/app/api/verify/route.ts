@@ -24,16 +24,32 @@ export async function GET(req: NextRequest) {
       next: { revalidate: 300 } // Cache for 5 minutes
     });
     
-    // Check if page exists and contains the username
+    // Fix #59: Use more robust verification than string includes()
     if (res.ok) {
       const html = await res.text();
-      // The page loads with the username in the route data
-      if (html.includes(`"name":"${cleanUsername}"`) || html.includes(`/u/${cleanUsername}`)) {
+      
+      // Look for exact JSON match with word boundaries
+      // Match "name":"<username>" with exact case-insensitive comparison
+      const nameMatch = html.match(/"name"\s*:\s*"([^"]+)"/i);
+      if (nameMatch && nameMatch[1].toLowerCase() === cleanUsername.toLowerCase()) {
         return NextResponse.json({
           verified: true,
           source: 'moltbook',
           agent: {
-            name: cleanUsername,
+            name: nameMatch[1], // Use the actual name from the page
+            profileUrl: `https://www.moltbook.com/u/${cleanUsername}`
+          }
+        });
+      }
+
+      // Also check canonical URL meta tag as fallback
+      const canonicalMatch = html.match(/<link[^>]*rel="canonical"[^>]*href="[^"]*\/u\/([^"\/]+)"/i);
+      if (canonicalMatch && canonicalMatch[1].toLowerCase() === cleanUsername.toLowerCase()) {
+        return NextResponse.json({
+          verified: true,
+          source: 'moltbook',
+          agent: {
+            name: canonicalMatch[1],
             profileUrl: `https://www.moltbook.com/u/${cleanUsername}`
           }
         });

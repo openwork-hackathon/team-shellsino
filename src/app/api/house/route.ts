@@ -38,23 +38,34 @@ const ERC20_ABI = [
 
 export async function GET() {
   try {
-    const [totalStaked, totalProfits, houseSupply] = await Promise.all([
+    // Fix #62: Track failures instead of silently returning 0
+    const errors: string[] = [];
+    
+    const results = await Promise.allSettled([
       client.readContract({
         address: HOUSE_BANKROLL,
         abi: HOUSE_BANKROLL_ABI,
         functionName: "totalStaked",
-      }).catch(() => BigInt(0)),
+      }),
       client.readContract({
         address: HOUSE_BANKROLL,
         abi: HOUSE_BANKROLL_ABI,
         functionName: "totalProfits",
-      }).catch(() => BigInt(0)),
+      }),
       client.readContract({
         address: HOUSE_TOKEN,
         abi: ERC20_ABI,
         functionName: "totalSupply",
-      }).catch(() => BigInt(0)),
+      }),
     ]);
+
+    const totalStaked = results[0].status === 'fulfilled' ? results[0].value : BigInt(0);
+    const totalProfits = results[1].status === 'fulfilled' ? results[1].value : BigInt(0);
+    const houseSupply = results[2].status === 'fulfilled' ? results[2].value : BigInt(0);
+
+    if (results[0].status === 'rejected') errors.push('totalStaked');
+    if (results[1].status === 'rejected') errors.push('totalProfits');
+    if (results[2].status === 'rejected') errors.push('houseTokenSupply');
 
     return Response.json({
       bankroll: {
@@ -66,6 +77,9 @@ export async function GET() {
         houseBankroll: HOUSE_BANKROLL,
         houseToken: HOUSE_TOKEN,
       },
+      ...(errors.length > 0 && { 
+        warnings: `Failed to fetch: ${errors.join(', ')}` 
+      }),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

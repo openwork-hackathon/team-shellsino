@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [coinflipStats, isVerified, rouletteStats] = await Promise.all([
+    // Fix #61: Use Promise.allSettled to handle individual failures gracefully
+    const results = await Promise.allSettled([
       client.readContract({
         address: COINFLIP_CONTRACT,
         abi: COINFLIP_ABI,
@@ -78,6 +79,17 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Extract values with fallbacks
+    const coinflipStats = results[0].status === 'fulfilled' 
+      ? results[0].value 
+      : [BigInt(0), BigInt(0), BigInt(0), ''] as readonly [bigint, bigint, bigint, string];
+    const isVerified = results[1].status === 'fulfilled' 
+      ? results[1].value 
+      : false;
+    const rouletteStats = results[2].status === 'fulfilled' 
+      ? results[2].value 
+      : ['', BigInt(0), BigInt(0), BigInt(0), BigInt(0)] as readonly [string, bigint, bigint, bigint, bigint];
+
     return Response.json({
       address,
       verified: isVerified,
@@ -89,6 +101,7 @@ export async function GET(request: NextRequest) {
         winRate: coinflipStats[0] + coinflipStats[1] > BigInt(0)
           ? (Number(coinflipStats[0]) / (Number(coinflipStats[0]) + Number(coinflipStats[1])) * 100).toFixed(1)
           : '0',
+        error: results[0].status === 'rejected' ? 'Failed to fetch' : null,
       },
       roulette: {
         name: rouletteStats[0] || null,
@@ -99,6 +112,7 @@ export async function GET(request: NextRequest) {
         survivalRate: rouletteStats[1] + rouletteStats[2] > BigInt(0)
           ? (Number(rouletteStats[1]) / (Number(rouletteStats[1]) + Number(rouletteStats[2])) * 100).toFixed(1)
           : '0',
+        error: results[2].status === 'rejected' ? 'Failed to fetch' : null,
       },
       timestamp: new Date().toISOString(),
     });
