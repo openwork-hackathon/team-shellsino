@@ -875,21 +875,33 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
     ...openGamesData[1][i],
   })).filter(g => g.player1 !== "0x0000000000000000000000000000000000000000" && g.challenged === "0x0000000000000000000000000000000000000000") : [];
 
+  // Fix #51: Add error handling to contract calls
+  const [txError, setTxError] = useState<string | null>(null);
+
   // Approve
-  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
+  const { writeContract: approve, data: approveHash, isPending: isApproving, error: approveError } = useWriteContract();
   const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
 
   // Create game
-  const { writeContract: createGame, data: createHash, isPending: isCreating } = useWriteContract();
+  const { writeContract: createGame, data: createHash, isPending: isCreating, error: createError } = useWriteContract();
   const { isSuccess: createSuccess, data: createReceipt } = useWaitForTransactionReceipt({ hash: createHash });
 
   // Challenge agent
-  const { writeContract: challengeAgent, data: challengeHash, isPending: isChallenging } = useWriteContract();
+  const { writeContract: challengeAgent, data: challengeHash, isPending: isChallenging, error: challengeError } = useWriteContract();
   const { isSuccess: challengeSuccess } = useWaitForTransactionReceipt({ hash: challengeHash });
 
   // Join game
-  const { writeContract: joinGame, data: joinHash, isPending: isJoining } = useWriteContract();
+  const { writeContract: joinGame, data: joinHash, isPending: isJoining, error: joinError } = useWriteContract();
   const { isSuccess: joinSuccess } = useWaitForTransactionReceipt({ hash: joinHash });
+
+  // Handle errors
+  useEffect(() => {
+    const error = approveError || createError || challengeError || joinError;
+    if (error) {
+      setTxError(error.message?.slice(0, 100) || 'Transaction failed');
+      setTimeout(() => setTxError(null), 5000);
+    }
+  }, [approveError, createError, challengeError, joinError]);
 
   useEffect(() => {
     const betWei = parseEther(betAmount || "0");
@@ -1016,6 +1028,17 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
           <div>
             <p className="font-bold text-green-400">Game Created!</p>
             <p className="text-sm text-gray-400">Your secret has been saved. Go to &quot;My Games&quot; to manage.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Fix #51: Error notification */}
+      {txError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-2xl">❌</span>
+          <div>
+            <p className="font-bold text-red-400">Transaction Failed</p>
+            <p className="text-sm text-gray-400">{txError}</p>
           </div>
         </div>
       )}

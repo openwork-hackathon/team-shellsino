@@ -9,17 +9,27 @@ const client = createPublicClient({
   transport: http('https://mainnet.base.org'),
 });
 
+// Fix #57: Only scan recent blocks (last ~10k blocks ≈ 5 hours on Base)
+const BLOCKS_TO_SCAN = BigInt(10000);
+
 // Get recent game events
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
+  
+  // Fix #58: Validate limit is positive
+  const rawLimit = parseInt(searchParams.get('limit') || '10');
+  const limit = Math.max(1, Math.min(rawLimit, 50));
   
   try {
+    // Get current block number
+    const currentBlock = await client.getBlockNumber();
+    const fromBlock = currentBlock > BLOCKS_TO_SCAN ? currentBlock - BLOCKS_TO_SCAN : BigInt(0);
+
     // Get recent coinflip game resolved events
     const coinflipLogs = await client.getLogs({
       address: COINFLIP_CONTRACT,
       event: parseAbiItem('event GameResolved(uint256 indexed gameId, address indexed winner, uint256 payout)'),
-      fromBlock: 'earliest',
+      fromBlock,
       toBlock: 'latest',
     }).catch(() => []);
 
@@ -27,7 +37,7 @@ export async function GET(request: Request) {
     const rouletteLogs = await client.getLogs({
       address: ROULETTE_CONTRACT,
       event: parseAbiItem('event RoundCompleted(uint256 indexed roundId, address eliminated)'),
-      fromBlock: 'earliest',
+      fromBlock,
       toBlock: 'latest',
     }).catch(() => []);
 
@@ -59,9 +69,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('History API error:', error);
+    // Fix #56: Return consistent 500 on errors
     return Response.json({ 
       games: [],
       error: 'Failed to fetch game history' 
-    }, { status: 200 }); // Return 200 with empty array instead of 500
+    }, { status: 500 });
   }
 }
