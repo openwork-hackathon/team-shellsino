@@ -15,16 +15,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Check if Moltbook profile exists by hitting the profile URL
     const profileUrl = `https://www.moltbook.com/u/${cleanUsername}`;
+    
     const res = await fetch(profileUrl, {
       headers: { 
-        'Accept': 'text/html',
-        'User-Agent': 'Shellsino/1.0 Agent Verification'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (compatible; Shellsino/1.0; +https://team-shellsino.vercel.app)',
       },
-      redirect: 'follow',
+      cache: 'no-store',
     });
-    
+
     if (!res.ok) {
       return NextResponse.json({
         verified: false,
@@ -34,83 +35,26 @@ export async function GET(req: NextRequest) {
 
     const html = await res.text();
     
-    // Check for 404 indicators in the response
-    if (html.includes('"c":["","_not-found"]') || 
-        html.includes('404: This page could not be found') ||
-        html.includes('<title>404:')) {
-      return NextResponse.json({
-        verified: false,
-        error: `Agent "${cleanUsername}" not found on Moltbook. Register at moltbook.com first!`
-      });
-    }
-
-    // Check for user data in the React hydration script
-    // Pattern: "c":["","u","Username"] indicates a valid user profile route
-    // Handle both escaped (\") and unescaped (") JSON
-    const routeMatch = html.match(/\\?"c\\?":\s*\[\\?"\\?"\s*,\s*\\?"u\\?"\s*,\s*\\?"([^"\\]+)\\?"\s*\]/);
-    if (routeMatch) {
-      const foundUsername = routeMatch[1];
-      // Case-insensitive match
-      if (foundUsername.toLowerCase() === cleanUsername.toLowerCase()) {
-        return NextResponse.json({
-          verified: true,
-          source: 'moltbook',
-          agent: {
-            name: foundUsername,
-            profileUrl: profileUrl
-          }
-        });
-      }
-    }
-
-    // Also check params in the hydration data (escaped format)
-    const paramsMatch = html.match(/\\?"params\\?":\s*\{\\?"name\\?":\s*\\?"([^"\\]+)\\?"\}/);
-    if (paramsMatch) {
-      const foundUsername = paramsMatch[1];
-      if (foundUsername.toLowerCase() === cleanUsername.toLowerCase()) {
-        return NextResponse.json({
-          verified: true,
-          source: 'moltbook',
-          agent: {
-            name: foundUsername,
-            profileUrl: profileUrl
-          }
-        });
-      }
-    }
+    // Check if this is a 404 page (Moltbook renders 404s with 200 status)
+    const is404 = html.includes('"c":["","_not-found"]') || 
+                  html.includes('404: This page could not be found');
     
-    // Fallback: Check for name in children array pattern: ["name","Username","d"]
-    const childrenMatch = html.match(/\[\\?"name\\?",\s*\\?"([^"\\]+)\\?",\s*\\?"d\\?"\]/);
-    if (childrenMatch) {
-      const foundUsername = childrenMatch[1];
-      if (foundUsername.toLowerCase() === cleanUsername.toLowerCase()) {
-        return NextResponse.json({
-          verified: true,
-          source: 'moltbook',
-          agent: {
-            name: foundUsername,
-            profileUrl: profileUrl
-          }
-        });
-      }
-    }
-
-    // If we got a 200 but can't find user data, check if page looks like a profile
-    // (might be a legit profile with different HTML structure)
-    if (html.includes(`/u/${cleanUsername}`) || html.includes(cleanUsername)) {
-      // Likely a valid profile page
+    // Count username occurrences - valid profiles have username multiple times
+    const usernameCount = (html.match(new RegExp(cleanUsername, 'gi')) || []).length;
+    
+    // Valid if: not a 404 AND username appears multiple times
+    if (!is404 && usernameCount >= 2) {
       return NextResponse.json({
         verified: true,
         source: 'moltbook',
         agent: {
           name: cleanUsername,
           profileUrl: profileUrl
-        },
-        note: 'Verified via page presence'
+        }
       });
     }
-    
-    // Not found on Moltbook
+
+    // Not found
     return NextResponse.json({
       verified: false,
       error: `Agent "${cleanUsername}" not found on Moltbook. Register at moltbook.com first!`
