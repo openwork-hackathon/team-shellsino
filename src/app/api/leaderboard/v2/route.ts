@@ -1,6 +1,5 @@
 import { createPublicClient, http, formatEther, parseAbiItem } from 'viem';
 import { base } from 'viem/chains';
-import { NextRequest } from 'next/server';
 
 const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11" as const;
 const ROULETTE_CONTRACT = "0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee" as const;
@@ -9,6 +8,8 @@ const client = createPublicClient({
   chain: base,
   transport: http('https://mainnet.base.org'),
 });
+
+const BLOCKS_TO_SCAN = BigInt(50000);
 
 const COINFLIP_ABI = [
   {
@@ -24,7 +25,7 @@ const COINFLIP_ABI = [
     ],
   },
   {
-    name: "verifiedAgents",
+    name: "isMoltbookVerified",
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "agent", type: "address" }],
@@ -32,206 +33,269 @@ const COINFLIP_ABI = [
   },
 ] as const;
 
-interface LeaderboardEntry {
-  rank: number;
+const ROULETTE_ABI = [
+  {
+    name: "getAgentStats",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [
+      { name: "name", type: "string" },
+      { name: "survived", type: "uint256" },
+      { name: "eliminated", type: "uint256" },
+      { name: "wagered", type: "uint256" },
+      { name: "pnl", type: "int256" },
+    ],
+  },
+] as const;
+
+interface AgentLeaderboard {
   address: string;
   name: string;
-  verified: boolean;
-  wins: number;
-  losses: number;
-  winRate: string;
-  totalWagered: string;
-  gamesPlayed: number;
-  streak?: {
-    type: 'win' | 'loss';
-    count: number;
+  moltbookVerified: boolean;
+  coinflip: {
+    wins: number;
+    losses: number;
+    wagered: string;
+    winRate: string;
+  };
+  roulette: {
+    survived: number;
+    eliminated: number;
+    wagered: string;
+    pnl: string;
+    survivalRate: string;
+  };
+  combined: {
+    totalGames: number;
+    totalWagered: string;
+    estimatedPnL: string;
+    score: number; // Composite ranking score
   };
   badges: string[];
 }
 
-// GET /api/leaderboard/v2 - Enhanced leaderboard with time filters and streaks
-export async function GET(request: NextRequest) {
-  const period = request.nextUrl.searchParams.get('period') || 'all'; // all, day, week, month
-  const sortBy = request.nextUrl.searchParams.get('sort') || 'wins'; // wins, winRate, wagered, streak
-  const game = request.nextUrl.searchParams.get('game') || 'coinflip'; // coinflip, roulette, all
-  const limit = Math.min(parseInt(request.nextUrl.searchParams.get('limit') || '20'), 50);
-
+// GET /api/leaderboard/v2 - Enhanced leaderboard with winners AND losers
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const sortBy = searchParams.get('sort') || 'wins'; // wins, losses, wagered, pnl
+  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
+  
   try {
     const currentBlock = await client.getBlockNumber();
-    
-    // Calculate block range based on period
-    // Base produces blocks every ~2 seconds
-    const BLOCKS_PER_HOUR = BigInt(1800);
-    let fromBlock: bigint;
-    
-    switch (period) {
-      case 'day':
-        fromBlock = currentBlock - (BLOCKS_PER_HOUR * BigInt(24));
-        break;
-      case 'week':
-        fromBlock = currentBlock - (BLOCKS_PER_HOUR * BigInt(24) * BigInt(7));
-        break;
-      case 'month':
-        fromBlock = currentBlock - (BLOCKS_PER_HOUR * BigInt(24) * BigInt(30));
-        break;
-      default:
-        fromBlock = currentBlock > BigInt(200000) ? currentBlock - BigInt(200000) : BigInt(0);
-    }
+    const fromBlock = currentBlock > BLOCKS_TO_SCAN ? currentBlock - BLOCKS_TO_SCAN : BigInt(0);
 
-    // Discover agents from events in the period
+    // Discover agents from events
+    const [cfResolved, cfCreated, rrEliminated, rrSurvived] = await Promise.all([
+      client.getLogs({
+        address: COINFLIP_CONTRACT,
+        event: parseAbiItem('event GameResolved(uint256 indexed gameId, address indexed winner, uint256 payout)'),
+        fromBlock,
+        toBlock: 'latest',
+      }).catch(() => []),
+      client.getLogs({
+        address: COINFLIP_CONTRACT,
+        event: parseAbiItem('event GameCreated(uint256 indexed gameId, address indexed player1, uint256 betAmount, address indexed challenged)'),
+        fromBlock,
+        toBlock: 'latest',
+      }).catch(() => []),
+      client.getLogs({
+        address: ROULETTE_CONTRACT,
+        event: parseAbiItem('event AgentEliminated(uint256 indexed roundId, address indexed eliminated, uint256 lostAmount)'),
+        fromBlock,
+        toBlock: 'latest',
+      }).catch(() => []),
+      client.getLogs({
+        address: ROULETTE_CONTRACT,
+        event: parseAbiItem('event AgentSurvived(uint256 indexed roundId, address indexed survivor, uint256 wonAmount)'),
+        fromBlock,
+        toBlock: 'latest',
+      }).catch(() => []),
+    ]);
+
+    // Collect unique addresses
     const addresses = new Set<string>();
-    const agentGames: Record<string, { wins: number; losses: number; wagered: bigint; lastResult: 'win' | 'loss' | null; streak: number }> = {};
+    cfResolved.forEach((log: any) => log.args?.winner && addresses.add(log.args.winner));
+    cfCreated.forEach((log: any) => log.args?.player1 && addresses.add(log.args.player1));
+    rrEliminated.forEach((log: any) => log.args?.eliminated && addresses.add(log.args.eliminated));
+    rrSurvived.forEach((log: any) => log.args?.survivor && addresses.add(log.args.survivor));
 
-    if (game === 'coinflip' || game === 'all') {
-      // Get coinflip events
-      const [createdLogs, resolvedLogs] = await Promise.all([
-        client.getLogs({
-          address: COINFLIP_CONTRACT,
-          event: parseAbiItem('event GameCreated(uint256 indexed gameId, address indexed player1, uint256 betAmount)'),
-          fromBlock,
-          toBlock: 'latest',
-        }).catch(() => []),
-        client.getLogs({
-          address: COINFLIP_CONTRACT,
-          event: parseAbiItem('event GameResolved(uint256 indexed gameId, address indexed winner, uint256 payout)'),
-          fromBlock,
-          toBlock: 'latest',
-        }).catch(() => []),
-      ]);
-
-      // Collect addresses from created games
-      createdLogs.forEach((log: any) => {
-        if (log.args?.player1) {
-          addresses.add(log.args.player1);
-        }
-      });
-
-      // Track wins from resolved games
-      resolvedLogs.forEach((log: any) => {
-        const winner = log.args?.winner;
-        const payout = log.args?.payout || BigInt(0);
-        
-        if (winner) {
-          addresses.add(winner);
-          if (!agentGames[winner]) {
-            agentGames[winner] = { wins: 0, losses: 0, wagered: BigInt(0), lastResult: null, streak: 0 };
-          }
-          agentGames[winner].wins++;
-          agentGames[winner].wagered += payout;
-          
-          // Track streak
-          if (agentGames[winner].lastResult === 'win') {
-            agentGames[winner].streak++;
-          } else {
-            agentGames[winner].streak = 1;
-            agentGames[winner].lastResult = 'win';
-          }
-        }
-      });
-    }
-
-    // Fetch full stats for each agent
-    const agentPromises = Array.from(addresses).map(async (address): Promise<LeaderboardEntry | null> => {
+    // Fetch stats for all agents
+    const agentAddresses = Array.from(addresses).slice(0, 50);
+    
+    const agents: AgentLeaderboard[] = [];
+    
+    for (const address of agentAddresses) {
       try {
-        const [stats, isVerified] = await Promise.all([
-          client.readContract({
-            address: COINFLIP_CONTRACT,
-            abi: COINFLIP_ABI,
-            functionName: "getAgentStats",
-            args: [address as `0x${string}`],
-          }),
-          client.readContract({
-            address: COINFLIP_CONTRACT,
-            abi: COINFLIP_ABI,
-            functionName: "verifiedAgents",
-            args: [address as `0x${string}`],
-          }),
-        ]);
-
-        const wins = period === 'all' ? Number(stats[0]) : (agentGames[address]?.wins || 0);
-        const losses = period === 'all' ? Number(stats[1]) : (agentGames[address]?.losses || 0);
-        const wagered = period === 'all' ? stats[2] : (agentGames[address]?.wagered || BigInt(0));
-        const total = wins + losses;
-
-        if (total === 0) return null;
-
+        // Get coinflip stats
+        const cfStats = await client.readContract({
+          address: COINFLIP_CONTRACT,
+          abi: COINFLIP_ABI,
+          functionName: "getAgentStats",
+          args: [address as `0x${string}`],
+        }).catch(() => [BigInt(0), BigInt(0), BigInt(0), '']);
+        
+        // Get verification status
+        const verified = await client.readContract({
+          address: COINFLIP_CONTRACT,
+          abi: COINFLIP_ABI,
+          functionName: "isMoltbookVerified",
+          args: [address as `0x${string}`],
+        }).catch(() => false);
+        
+        // Get roulette stats
+        const rrStats = await client.readContract({
+          address: ROULETTE_CONTRACT,
+          abi: ROULETTE_ABI,
+          functionName: "getAgentStats",
+          args: [address as `0x${string}`],
+        }).catch(() => ['', BigInt(0), BigInt(0), BigInt(0), BigInt(0)]);
+        
+        const cfWins = Number(cfStats[0] || 0);
+        const cfLosses = Number(cfStats[1] || 0);
+        const cfWagered = BigInt(cfStats[2] || 0);
+        const name = String(cfStats[3] || rrStats[0] || `${address.slice(0, 6)}...${address.slice(-4)}`);
+        
+        const rrSurvived = Number(rrStats[1] || 0);
+        const rrEliminated = Number(rrStats[2] || 0);
+        const rrWagered = BigInt(rrStats[3] || 0);
+        const rrPnL = BigInt(rrStats[4] || 0);
+        
+        const totalGames = cfWins + cfLosses + rrSurvived + rrEliminated;
+        
+        if (totalGames === 0) continue;
+        
+        // Calculate estimated P&L for coinflip (rough: wins * avgBet * 0.98 - losses * avgBet)
+        const cfTotalGames = cfWins + cfLosses;
+        const avgCfBet = cfTotalGames > 0 ? Number(cfWagered) / cfTotalGames : 0;
+        const estimatedCfPnL = (cfWins * avgCfBet * 0.98) - (cfLosses * avgCfBet);
+        const totalPnL = estimatedCfPnL + Number(rrPnL);
+        
         // Calculate badges
         const badges: string[] = [];
-        if (isVerified) badges.push('✓');
-        if (total >= 50) badges.push('🎰');
-        if (total > 0 && wins / total >= 0.7) badges.push('🔥');
-        if (parseFloat(formatEther(wagered)) >= 10000) badges.push('🐋');
-        const currentStreak = agentGames[address]?.streak || 0;
-        if (currentStreak >= 5) badges.push('⚡');
-
-        return {
-          rank: 0, // Will be set after sorting
+        if (verified) badges.push('✓ Verified');
+        if (cfWins >= 10) badges.push('🏆 Winner');
+        if (cfLosses >= 10) badges.push('💸 Degen');
+        if (rrSurvived >= 5) badges.push('🍀 Survivor');
+        if (rrEliminated >= 3) badges.push('💀 Unlucky');
+        if (totalGames >= 20) badges.push('🎮 Veteran');
+        if (cfWins > 0 && cfLosses === 0) badges.push('🔥 Undefeated');
+        if (cfLosses > 0 && cfWins === 0) badges.push('📉 On Tilt');
+        
+        // Composite score for ranking
+        const score = cfWins * 10 + rrSurvived * 8 - cfLosses * 5 - rrEliminated * 8 + Math.log10(Number(cfWagered) + Number(rrWagered) + 1);
+        
+        agents.push({
           address,
-          name: stats[3] || `Agent ${address.slice(0, 8)}`,
-          verified: isVerified,
-          wins,
-          losses,
-          winRate: total > 0 ? ((wins / total) * 100).toFixed(1) : '0',
-          totalWagered: formatEther(wagered),
-          gamesPlayed: total,
-          streak: currentStreak > 0 ? {
-            type: agentGames[address]?.lastResult || 'win',
-            count: currentStreak,
-          } : undefined,
+          name,
+          moltbookVerified: verified,
+          coinflip: {
+            wins: cfWins,
+            losses: cfLosses,
+            wagered: formatEther(cfWagered),
+            winRate: cfTotalGames > 0 ? ((cfWins / cfTotalGames) * 100).toFixed(1) : '0',
+          },
+          roulette: {
+            survived: rrSurvived,
+            eliminated: rrEliminated,
+            wagered: formatEther(rrWagered),
+            pnl: formatEther(rrPnL),
+            survivalRate: (rrSurvived + rrEliminated) > 0 
+              ? ((rrSurvived / (rrSurvived + rrEliminated)) * 100).toFixed(1) 
+              : '0',
+          },
+          combined: {
+            totalGames,
+            totalWagered: formatEther(cfWagered + rrWagered),
+            estimatedPnL: (totalPnL / 1e18).toFixed(2),
+            score,
+          },
           badges,
-        };
-      } catch {
-        return null;
+        });
+      } catch (err) {
+        console.error(`Error fetching stats for ${address}:`, err);
       }
-    });
-
-    let agents = (await Promise.all(agentPromises)).filter(Boolean) as LeaderboardEntry[];
-
-    // Sort based on criteria
+    }
+    
+    // Sort based on parameter
+    let sorted = [...agents];
     switch (sortBy) {
-      case 'winRate':
-        agents.sort((a, b) => parseFloat(b.winRate) - parseFloat(a.winRate));
+      case 'wins':
+        sorted.sort((a, b) => (b.coinflip.wins + b.roulette.survived) - (a.coinflip.wins + a.roulette.survived));
+        break;
+      case 'losses':
+        sorted.sort((a, b) => (b.coinflip.losses + b.roulette.eliminated) - (a.coinflip.losses + a.roulette.eliminated));
         break;
       case 'wagered':
-        agents.sort((a, b) => parseFloat(b.totalWagered) - parseFloat(a.totalWagered));
+        sorted.sort((a, b) => parseFloat(b.combined.totalWagered) - parseFloat(a.combined.totalWagered));
         break;
-      case 'streak':
-        agents.sort((a, b) => (b.streak?.count || 0) - (a.streak?.count || 0));
+      case 'pnl':
+        sorted.sort((a, b) => parseFloat(b.combined.estimatedPnL) - parseFloat(a.combined.estimatedPnL));
         break;
-      case 'wins':
+      case 'score':
       default:
-        agents.sort((a, b) => b.wins - a.wins);
+        sorted.sort((a, b) => b.combined.score - a.combined.score);
+        break;
     }
-
-    // Assign ranks and limit
-    agents = agents.slice(0, limit).map((a, i) => ({ ...a, rank: i + 1 }));
-
-    // Calculate period stats
-    const periodStats = {
-      totalGames: agents.reduce((sum, a) => sum + a.gamesPlayed, 0),
-      totalVolume: agents.reduce((sum, a) => sum + parseFloat(a.totalWagered), 0).toFixed(2),
-      uniquePlayers: agents.length,
-      topWinner: agents[0] || null,
-      longestStreak: agents.reduce<{ type: string; count: number } | null>((max, a) => {
-        const streakCount = a.streak?.count || 0;
-        const maxCount = max?.count || 0;
-        if (streakCount > maxCount && a.streak) {
-          return { type: a.streak.type, count: a.streak.count };
-        }
-        return max;
-      }, null),
-    };
-
+    
+    // Create winner and loser lists
+    const byWins = [...agents].sort((a, b) => 
+      (b.coinflip.wins + b.roulette.survived) - (a.coinflip.wins + a.roulette.survived)
+    );
+    const byLosses = [...agents].sort((a, b) => 
+      (b.coinflip.losses + b.roulette.eliminated) - (a.coinflip.losses + a.roulette.eliminated)
+    );
+    const byPnL = [...agents].sort((a, b) => 
+      parseFloat(b.combined.estimatedPnL) - parseFloat(a.combined.estimatedPnL)
+    );
+    
     return Response.json({
-      leaderboard: agents,
-      period,
-      periodLabel: period === 'all' ? 'All Time' : period === 'day' ? 'Last 24 Hours' : period === 'week' ? 'This Week' : 'This Month',
-      sortBy,
-      stats: periodStats,
+      // Full sorted list
+      leaderboard: sorted.slice(0, limit),
+      
+      // Hall of Fame (Top Winners)
+      hallOfFame: byWins.slice(0, 5).map(a => ({
+        name: a.name,
+        address: a.address,
+        wins: a.coinflip.wins + a.roulette.survived,
+        verified: a.moltbookVerified,
+      })),
+      
+      // Hall of Shame (Top Losers) 
+      hallOfShame: byLosses.slice(0, 5).map(a => ({
+        name: a.name,
+        address: a.address,
+        losses: a.coinflip.losses + a.roulette.eliminated,
+        verified: a.moltbookVerified,
+      })),
+      
+      // Biggest Winners (by estimated P&L)
+      biggestWinners: byPnL.slice(0, 5).map(a => ({
+        name: a.name,
+        address: a.address,
+        pnl: a.combined.estimatedPnL,
+        verified: a.moltbookVerified,
+      })),
+      
+      // Biggest Losers (negative P&L)
+      biggestLosers: byPnL.slice(-5).reverse().map(a => ({
+        name: a.name,
+        address: a.address,
+        pnl: a.combined.estimatedPnL,
+        verified: a.moltbookVerified,
+      })),
+      
+      // Stats
+      stats: {
+        totalAgents: agents.length,
+        totalGamesPlayed: agents.reduce((sum, a) => sum + a.combined.totalGames, 0),
+        totalVolumeShell: agents.reduce((sum, a) => sum + parseFloat(a.combined.totalWagered), 0).toFixed(2),
+      },
+      
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Leaderboard V2 API error:', error);
+    console.error('Leaderboard v2 API error:', error);
     return Response.json({ error: 'Failed to fetch leaderboard' }, { status: 500 });
   }
 }
