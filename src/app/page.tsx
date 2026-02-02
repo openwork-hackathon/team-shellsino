@@ -436,15 +436,19 @@ export default function CasinoHome() {
   return (
     <main className="min-h-screen bg-[#0e0e0f] text-gray-100">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-[#1a1a1b]">
+      <header className="border-b border-gray-800 bg-gradient-to-r from-[#1a1a1b] via-[#1f1a1a] to-[#1a1a1b]">
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl">🦞</span>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <span className="text-3xl animate-bounce" style={{ animationDuration: '2s' }}>🎰</span>
+              <span className="absolute -top-1 -right-1 text-xs">🦞</span>
+            </div>
             <div>
-              <h1 className="text-xl font-bold text-red-400">
+              <h1 className="text-xl font-bold bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
                 shellsino
-                <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">beta</span>
+                <span className="ml-2 text-[10px] bg-gradient-to-r from-red-500/30 to-orange-500/30 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">LIVE</span>
               </h1>
+              <p className="text-[10px] text-gray-500">where agents gamble</p>
             </div>
           </div>
           
@@ -482,6 +486,36 @@ export default function CasinoHome() {
           </div>
         </div>
       </header>
+
+      {/* Live Stats Banner */}
+      {isConnected && isVerified && (
+        <div className="bg-gradient-to-r from-[#0f0f10] via-[#131314] to-[#0f0f10] border-b border-gray-800/50 py-2 overflow-hidden">
+          <div className="max-w-5xl mx-auto px-4 flex items-center justify-center gap-8 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-live"></span>
+              <span className="text-gray-500">LIVE</span>
+            </div>
+            <div className="text-gray-500">
+              <span className="text-gray-400">Your Stats:</span>{' '}
+              <span className="text-green-400 font-mono">{agentName || 'Agent'}</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-6 text-gray-500">
+              <span>
+                Network: <span className="text-blue-400">Base</span>
+              </span>
+              <span>
+                Token: <span className="text-red-400">$SHELL</span>
+              </span>
+              <a 
+                href="/arena" 
+                className="text-orange-400 hover:text-orange-300 transition"
+              >
+                🔴 Live Arena →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Fix #67: Show loading during initial connection */}
@@ -548,22 +582,32 @@ export default function CasinoHome() {
       </div>
 
       {/* Footer with disclaimers */}
-      <footer className="border-t border-gray-800 py-6 mt-12">
+      <footer className="border-t border-gray-800 py-8 mt-12 bg-gradient-to-t from-[#0a0a0a] to-transparent">
         <div className="max-w-5xl mx-auto px-4 text-center">
-          <p className="text-gray-500 text-xs mb-2">
+          {/* Hackathon Badge */}
+          <div className="inline-flex items-center gap-2 mb-4 px-4 py-2 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-full border border-purple-500/20">
+            <span className="text-sm">🏆</span>
+            <span className="text-xs text-purple-400 font-medium">Clawathon 2026 Entry</span>
+            <span className="text-xs text-gray-500">|</span>
+            <a href="https://openwork.bot/hackathon" target="_blank" className="text-xs text-pink-400 hover:underline">View Hackathon</a>
+          </div>
+          
+          <p className="text-gray-500 text-sm mb-2">
             Built for agents, by agents* 🦞
           </p>
-          <p className="text-gray-600 text-xs mb-4">
-            <a href="https://moltbook.com/u/Flipcee" className="hover:text-red-400" target="_blank">@Flipcee</a>
-            {" · "}
-            <a href={`https://basescan.org/token/${SHELL_TOKEN}`} className="hover:text-red-400" target="_blank">$SHELL</a>
-            {" · "}
-            <a href={`https://basescan.org/address/${COINFLIP_CONTRACT}`} className="hover:text-red-400" target="_blank">Contract</a>
-          </p>
-          <div className="text-[10px] text-gray-700 max-w-2xl mx-auto">
+          <div className="flex items-center justify-center gap-3 text-xs mb-4">
+            <a href="https://moltbook.com/u/Flipcee" className="text-gray-400 hover:text-red-400 transition" target="_blank">@Flipcee</a>
+            <span className="text-gray-700">·</span>
+            <a href={`https://basescan.org/token/${SHELL_TOKEN}`} className="text-gray-400 hover:text-red-400 transition" target="_blank">$SHELL</a>
+            <span className="text-gray-700">·</span>
+            <a href={`https://basescan.org/address/${COINFLIP_CONTRACT}`} className="text-gray-400 hover:text-red-400 transition" target="_blank">Contracts</a>
+            <span className="text-gray-700">·</span>
+            <a href="https://github.com/openwork-hackathon/team-shellsino" className="text-gray-400 hover:text-red-400 transition" target="_blank">GitHub</a>
+          </div>
+          <div className="text-[10px] text-gray-600 max-w-2xl mx-auto space-y-1">
             <p>⚠️ DISCLAIMER: Gambling involves risk. You can lose your $SHELL. Play responsibly.</p>
             <p>We are not responsible for any losses. This is experimental software. Use at your own risk.</p>
-            <p className="mt-1">*with some human help from @flippp_</p>
+            <p className="text-gray-700 mt-2">*with some human help from @flippp_</p>
           </div>
         </div>
       </footer>

@@ -140,3 +140,83 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
+
+/* Glow effects for buttons */
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.glow-yellow {
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+}
+
+/* Gradient border */
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #ef4444, #f97316, #ef4444);
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Live indicator pulse */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+.animate-live {
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+/* Float animation for mascot */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Jackpot glow */
+@keyframes jackpotGlow {
+  0%, 100% { 
+    text-shadow: 0 0 10px #fbbf24, 0 0 20px #f59e0b, 0 0 30px #d97706; 
+  }
+  50% { 
+    text-shadow: 0 0 20px #fbbf24, 0 0 40px #f59e0b, 0 0 60px #d97706; 
+  }
+}
+
+.animate-jackpot {
+  animation: jackpotGlow 1.5s ease-in-out infinite;
+}
+
+/* Rainbow border for special items */
+@keyframes rainbow {
+  0% { border-color: #ef4444; }
+  20% { border-color: #f97316; }
+  40% { border-color: #eab308; }
+  60% { border-color: #22c55e; }
+  80% { border-color: #3b82f6; }
+  100% { border-color: #ef4444; }
+}
+
+.animate-rainbow {
+  animation: rainbow 3s linear infinite;
+}
