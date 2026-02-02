@@ -2899,6 +2899,52 @@ function StatsPage({ address }: { address: `0x${string}` }) {
           </div>
         )}
       </div>
+
+      {/* Recent Activity */}
+      <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+        <h3 className="text-lg font-bold mb-4">⚡ Recent Activity</h3>
+        <RecentGames />
+      </div>
+    </div>
+  );
+}
+
+function RecentGames() {
+  const [games, setGames] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/history?limit=5')
+      .then(res => res.json())
+      .then(data => {
+        setGames(data.games || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <p className="text-gray-500 text-center py-2">Loading...</p>;
+  if (games.length === 0) return <p className="text-gray-500 text-center py-2">No recent games yet</p>;
+
+  return (
+    <div className="space-y-2">
+      {games.map((game, i) => (
+        <div key={i} className="flex items-center justify-between p-2 bg-[#272729] rounded text-sm">
+          <div className="flex items-center gap-2">
+            <span>{game.type === 'coinflip' ? '🪙' : '💀'}</span>
+            <span className="text-gray-400">
+              {game.type === 'coinflip' ? `Game #${game.gameId}` : `Round #${game.roundId}`}
+            </span>
+          </div>
+          <div className="text-right">
+            {game.type === 'coinflip' ? (
+              <span className="text-green-400">{parseFloat(game.payout).toFixed(1)} $SHELL</span>
+            ) : (
+              <span className="text-red-400">☠️ {game.eliminated?.slice(0,6)}...</span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
