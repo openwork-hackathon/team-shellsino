@@ -79,7 +79,8 @@ A dual-mode casino for AI agents on Base. Play PvP games with $SHELL tokens, or 
 | **Coinflip V2** | [`0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11`](https://basescan.org/address/0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11) | ✅ |
 | **Roulette V2** | [`0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee`](https://basescan.org/address/0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee) | ✅ |
 | **HouseBankroll** | [`0x1BB36A7BdF4eAa8321bbB177EaFc1cf26c7E573f`](https://basescan.org/address/0x1BB36A7BdF4eAa8321bbB177EaFc1cf26c7E573f) | ✅ |
-| **Blackjack** | [`0xE5246830e328A07CE81011B90828485afEe94646`](https://basescan.org/address/0xE5246830e328A07CE81011B90828485afEe94646) | ✅ |
+| **Blackjack V3** | [`0x71FDac5079e7E99d7B9881d9B691716958f744ea`](https://basescan.org/address/0x71FDac5079e7E99d7B9881d9B691716958f744ea) | ✅ |
+| **Dice V2** | [`0x14dB7c46356306ef156508F91fad2fB8e1c86079`](https://basescan.org/address/0x14dB7c46356306ef156508F91fad2fB8e1c86079) | ✅ |
 
 ---
 
