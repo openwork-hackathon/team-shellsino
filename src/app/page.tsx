@@ -396,7 +396,7 @@ function getAllSecrets(): Record<number, { secret: string; choice: number; times
   return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
 }
 
-type Tab = "coinflip" | "roulette" | "blackjack" | "house" | "mygames" | "stats";
+type Tab = "coinflip" | "roulette" | "blackjack" | "dice" | "house" | "mygames" | "stats";
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
@@ -507,6 +507,7 @@ export default function CasinoHome() {
                 { id: "coinflip" as Tab, label: "🪙 Coinflip" },
                 { id: "roulette" as Tab, label: "💀 Roulette" },
                 { id: "blackjack" as Tab, label: "🃏 Blackjack" },
+                { id: "dice" as Tab, label: "🎲 Dice" },
                 { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
@@ -534,6 +535,7 @@ export default function CasinoHome() {
             {activeTab === "coinflip" && <CoinflipGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "roulette" && <RouletteGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "blackjack" && <BlackjackGame address={address!} onBalanceChange={refetchBalance} />}
+            {activeTab === "dice" && <DiceGame />}
             {activeTab === "house" && <HouseStaking address={address!} />}
             {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
@@ -2062,6 +2064,59 @@ function removeBJSecret(gameId: number) {
   const secrets = JSON.parse(localStorage.getItem('shellsino_bj_secrets') || '{}');
   delete secrets[gameId];
   localStorage.setItem('shellsino_bj_secrets', JSON.stringify(secrets));
+}
+
+// 🎲 DICE - Player vs House (Roll under to win!)
+const DICE_CONTRACT = "0x14dB7c46356306ef156508F91fad2fB8e1c86079"; // V2 with fixes
+
+function DiceGame() {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold mb-4">🎲 Dice - Roll Under to Win!</h2>
+      
+      <div className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 rounded-2xl p-8 border border-green-500/30">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🎲</div>
+          <h3 className="text-2xl font-bold text-green-400 mb-2">Coming Soon!</h3>
+          <p className="text-gray-400 mb-6">
+            Roll under your target to win. Lower target = higher payout!
+          </p>
+          
+          <div className="bg-black/30 rounded-xl p-6 max-w-md mx-auto text-left">
+            <h4 className="font-bold text-white mb-3">How It Works:</h4>
+            <ul className="space-y-2 text-gray-300 text-sm">
+              <li>• Choose a target (2-98)</li>
+              <li>• Roll 0-99, win if roll &lt; target</li>
+              <li>• Lower target = lower chance = higher payout</li>
+              <li>• 2% house edge, commit-reveal randomness</li>
+            </ul>
+            
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <h4 className="font-bold text-white mb-2">Example Payouts:</h4>
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div className="text-center p-2 bg-green-900/30 rounded">
+                  <div className="text-green-400 font-bold">Target 50</div>
+                  <div className="text-gray-400">~1.96x</div>
+                </div>
+                <div className="text-center p-2 bg-yellow-900/30 rounded">
+                  <div className="text-yellow-400 font-bold">Target 25</div>
+                  <div className="text-gray-400">~3.92x</div>
+                </div>
+                <div className="text-center p-2 bg-red-900/30 rounded">
+                  <div className="text-red-400 font-bold">Target 10</div>
+                  <div className="text-gray-400">~9.8x</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-xs text-gray-500 mt-6">
+            Contract deployed: <a href={`https://basescan.org/address/${DICE_CONTRACT}`} target="_blank" className="text-green-400 hover:underline">{DICE_CONTRACT.slice(0, 10)}...</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // 🃏 BLACKJACK - Player vs House
