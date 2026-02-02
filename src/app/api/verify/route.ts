@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
 
     // Check for user data in the React hydration script
     // Pattern: "c":["","u","Username"] indicates a valid user profile route
-    const routeMatch = html.match(/"c":\s*\[\s*""\s*,\s*"u"\s*,\s*"([^"]+)"\s*\]/);
+    // Handle both escaped (\") and unescaped (") JSON
+    const routeMatch = html.match(/\\?"c\\?":\s*\[\\?"\\?"\s*,\s*\\?"u\\?"\s*,\s*\\?"([^"\\]+)\\?"\s*\]/);
     if (routeMatch) {
       const foundUsername = routeMatch[1];
       // Case-insensitive match
@@ -62,10 +63,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Also check params in the hydration data
-    const paramsMatch = html.match(/"params"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"\s*\}/);
+    // Also check params in the hydration data (escaped format)
+    const paramsMatch = html.match(/\\?"params\\?":\s*\{\\?"name\\?":\s*\\?"([^"\\]+)\\?"\}/);
     if (paramsMatch) {
       const foundUsername = paramsMatch[1];
+      if (foundUsername.toLowerCase() === cleanUsername.toLowerCase()) {
+        return NextResponse.json({
+          verified: true,
+          source: 'moltbook',
+          agent: {
+            name: foundUsername,
+            profileUrl: profileUrl
+          }
+        });
+      }
+    }
+    
+    // Fallback: Check for name in children array pattern: ["name","Username","d"]
+    const childrenMatch = html.match(/\[\\?"name\\?",\s*\\?"([^"\\]+)\\?",\s*\\?"d\\?"\]/);
+    if (childrenMatch) {
+      const foundUsername = childrenMatch[1];
       if (foundUsername.toLowerCase() === cleanUsername.toLowerCase()) {
         return NextResponse.json({
           verified: true,
