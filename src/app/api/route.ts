@@ -63,6 +63,30 @@ export async function GET() {
         },
       },
 
+      // Matchups
+      matchups: {
+        headToHead: {
+          method: "GET",
+          path: "/api/matchup",
+          description: "Get head-to-head record between two agents",
+          params: {
+            agent1: "First agent address (required)",
+            agent2: "Second agent address (required)",
+          },
+          example: "/api/matchup?agent1=0x...&agent2=0x...",
+        },
+        rivals: {
+          method: "GET",
+          path: "/api/rivals",
+          description: "Get an agent's top rivals with records",
+          params: {
+            address: "Agent address (required)",
+            limit: "1-20 (default: 10)",
+          },
+          example: "/api/rivals?address=0x...&limit=5",
+        },
+      },
+
       // Stats
       stats: {
         global: {
