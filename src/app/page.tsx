@@ -1534,8 +1534,8 @@ function MyGamesPage({ address, onBalanceChange }: { address: `0x${string}`; onB
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded">
-                    Waiting...
+                  <span className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded animate-pending">
+                    ⏳ Waiting...
                   </span>
                   <button
                     onClick={() => handleCancel(game.id)}
@@ -2355,18 +2355,24 @@ function BlackjackGame({ address, onBalanceChange }: { address: `0x${string}`; o
 
             {/* Game Over Message */}
             {(gameState === 4 || playerHand?.[5]) && (
-              <div className="mt-4">
-                <p className="text-xl font-bold mb-2">
+              <div className={`mt-4 p-4 rounded-lg ${
+                playerHand?.[5] || (playerHand?.[2] || 0) < (gameData?.[5] || 0) 
+                  ? 'bg-red-500/10 animate-lose' 
+                  : (playerHand?.[2] || 0) > (gameData?.[5] || 0) || playerHand?.[6]
+                    ? 'bg-green-500/10 animate-win'
+                    : 'bg-gray-500/10'
+              }`}>
+                <p className="text-2xl font-bold mb-3">
                   {playerHand?.[5] ? (
-                    <span className="text-red-400">BUST! Dealer Wins</span>
+                    <span className="text-red-400">💥 BUST! Dealer Wins</span>
                   ) : playerHand?.[6] && gameData?.[5] !== 21 ? (
-                    <span className="text-yellow-400">BLACKJACK! You Win 3:2!</span>
+                    <span className="text-yellow-400">🎉 BLACKJACK! You Win 3:2!</span>
                   ) : (playerHand?.[2] || 0) > (gameData?.[5] || 0) ? (
-                    <span className="text-green-400">You Win!</span>
+                    <span className="text-green-400">🎉 You Win!</span>
                   ) : (playerHand?.[2] || 0) === (gameData?.[5] || 0) ? (
-                    <span className="text-gray-400">Push - Bet Returned</span>
+                    <span className="text-gray-400">🤝 Push - Bet Returned</span>
                   ) : (
-                    <span className="text-red-400">Dealer Wins</span>
+                    <span className="text-red-400">😞 Dealer Wins</span>
                   )}
                 </p>
                 <button
@@ -2374,9 +2380,9 @@ function BlackjackGame({ address, onBalanceChange }: { address: `0x${string}`; o
                     refetchActiveGame();
                     refetchGame();
                   }}
-                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+                  className="px-6 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
                 >
-                  New Game
+                  🎰 Play Again
                 </button>
               </div>
             )}
