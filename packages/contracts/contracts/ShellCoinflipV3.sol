@@ -23,6 +23,7 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
     uint256 public protocolFeeBps = 100; // 1% fee
     uint256 public totalGamesPlayed;
     uint256 public totalVolume;
+    uint256 public reservedChallengeBalance;  // Track funds locked in pending challenges (Fix #77)
     
     // Supported bet amounts for instant matching
     uint256[] public supportedBets;
@@ -310,6 +311,8 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
             winner: address(0)
         });
         
+        reservedChallengeBalance += betAmount;  // Track reserved funds
+        
         emit ChallengeCreated(challengeId, msg.sender, challenged, betAmount);
         return challengeId;
     }
@@ -376,6 +379,9 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
         totalWagered[c.challenger] += c.betAmount;
         totalWagered[c.challenged] += c.betAmount;
         
+        // Release reserved funds (challenger's bet was reserved, accepter's is new)
+        reservedChallengeBalance -= c.betAmount;
+        
         // Pay winner
         shellToken.safeTransfer(winner, payout);
         
@@ -391,6 +397,9 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
         require(!c.accepted && !c.resolved, "Already handled");
         
         c.resolved = true;
+        
+        // Release reserved funds
+        reservedChallengeBalance -= c.betAmount;
         
         // Refund challenger
         shellToken.safeTransfer(c.challenger, c.betAmount);
@@ -508,13 +517,12 @@ contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
         uint256 balance = shellToken.balanceOf(address(this));
         
         // Calculate reserved amounts (pools + pending challenges)
-        uint256 reserved = 0;
+        uint256 reserved = reservedChallengeBalance;  // Pending challenges (Fix #77)
         for (uint256 i = 0; i < supportedBets.length; i++) {
             if (matchingPool[supportedBets[i]] != address(0)) {
                 reserved += supportedBets[i];
             }
         }
-        // Note: Would need to track pending challenges too for full accuracy
         
         require(balance > reserved, "No fees to withdraw");
         uint256 withdrawAmount = balance - reserved;

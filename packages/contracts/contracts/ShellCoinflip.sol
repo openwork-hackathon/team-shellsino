@@ -24,6 +24,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
     uint256 public protocolFeeBps = 100; // 1% fee (100 basis points)
     uint256 public totalGamesPlayed;
     uint256 public totalVolume;
+    uint256 public reservedBalance;  // Track funds locked in active games (Fix #78)
     
     // Game timeouts
     uint256 public gameTimeout = 1 hours;           // Time before unjoined game can be cancelled
@@ -209,6 +210,8 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
             winner: address(0)
         });
         
+        reservedBalance += betAmount;  // Track reserved funds
+        
         emit GameCreated(gameId, msg.sender, betAmount, challenged);
         return gameId;
     }
@@ -239,6 +242,8 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         game.player2Choice = choice;
         game.state = GameState.Joined;
         game.joinedAt = block.timestamp;
+        
+        reservedBalance += game.betAmount;  // Track reserved funds
         
         emit GameJoined(gameId, msg.sender, choice);
     }
@@ -280,6 +285,9 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         totalWagered[game.player1] += game.betAmount;
         totalWagered[game.player2] += game.betAmount;
         
+        // Release reserved funds
+        reservedBalance -= totalPot;
+        
         // Transfer winnings
         shellToken.safeTransfer(winner, payout);
         
@@ -300,6 +308,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         require(isCreator || isExpired, "Cannot cancel yet");
         
         game.state = GameState.Resolved;
+        reservedBalance -= game.betAmount;  // Release reserved funds
         shellToken.safeTransfer(game.player1, game.betAmount);
         
         if (isExpired && !isCreator) {
@@ -540,17 +549,13 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
     }
     
     function withdrawFees(address to) external onlyOwner {
+        require(to != address(0), "Invalid recipient");
         uint256 balance = shellToken.balanceOf(address(this));
-        uint256 reserved = 0;
-        for (uint256 i = 1; i < nextGameId; i++) {
-            if (games[i].state == GameState.Created) {
-                reserved += games[i].betAmount;
-            } else if (games[i].state == GameState.Joined) {
-                reserved += games[i].betAmount * 2;
-            }
-        }
-        require(balance > reserved, "No fees to withdraw");
-        shellToken.safeTransfer(to, balance - reserved);
+        
+        // Use tracked reservedBalance instead of looping (Fix #78)
+        require(balance > reservedBalance, "No fees to withdraw");
+        uint256 withdrawAmount = balance - reservedBalance;
+        shellToken.safeTransfer(to, withdrawAmount);
     }
     
     function generateCommitment(uint8 choice, bytes32 secret) external pure returns (bytes32) {
