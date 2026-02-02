@@ -272,9 +272,11 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         game.winner = winner;
         game.state = GameState.Resolved;
         
-        // Calculate payout
+        // Calculate payout (ceiling division for fees - Fix #100, #105)
         uint256 totalPot = game.betAmount * 2;
-        uint256 fee = (totalPot * protocolFeeBps) / 10000;
+        uint256 fee = protocolFeeBps > 0 
+            ? ((totalPot * protocolFeeBps) + 10000 - 1) / 10000 
+            : 0;
         uint256 payout = totalPot - fee;
         
         // Update stats
@@ -330,7 +332,10 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         game.state = GameState.Resolved;
         
         uint256 totalPot = game.betAmount * 2;
-        uint256 fee = (totalPot * protocolFeeBps) / 10000;
+        // Ceiling division for fees (Fix #100, #105)
+        uint256 fee = protocolFeeBps > 0 
+            ? ((totalPot * protocolFeeBps) + 10000 - 1) / 10000 
+            : 0;
         uint256 payout = totalPot - fee;
         
         totalGamesPlayed++;

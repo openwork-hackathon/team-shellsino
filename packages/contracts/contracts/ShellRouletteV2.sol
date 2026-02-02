@@ -227,11 +227,14 @@ contract ShellRouletteV2 is ReentrancyGuard, Pausable, Ownable {
         uint8 eliminatedIndex = uint8(randomness % 6);
         address eliminatedPlayer = players[eliminatedIndex];
         
-        // Calculate payouts
+        // Calculate payouts (ceiling division for fees - Fix #100, #105)
         uint256 totalPot = betAmount * 6;
-        uint256 fee = (totalPot * protocolFeeBps) / 10000;
+        uint256 fee = protocolFeeBps > 0 
+            ? ((totalPot * protocolFeeBps) + 10000 - 1) / 10000 
+            : 0;
         uint256 prizePool = totalPot - fee;
         uint256 prizePerSurvivor = prizePool / 5;
+        // Note: Any remainder (prizePool % 5) stays in contract as dust (minimal)
         
         // Update stats and distribute
         totalRoundsPlayed++;
