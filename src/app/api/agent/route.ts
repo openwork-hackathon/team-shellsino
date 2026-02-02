@@ -62,19 +62,19 @@ export async function GET(request: NextRequest) {
         address: COINFLIP_CONTRACT,
         abi: COINFLIP_ABI,
         functionName: "getAgentStats",
-        args: [address as \`0x\${string}\`],
+        args: [address as `0x${string}`],
       }),
       client.readContract({
         address: COINFLIP_CONTRACT,
         abi: COINFLIP_ABI,
         functionName: "verifiedAgents",
-        args: [address as \`0x\${string}\`],
+        args: [address as `0x${string}`],
       }),
       client.readContract({
         address: ROULETTE_CONTRACT,
         abi: ROULETTE_ABI,
         functionName: "getAgentStats",
-        args: [address as \`0x\${string}\`],
+        args: [address as `0x${string}`],
       }),
     ]);
 
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
         wins: Number(coinflipStats[0]),
         losses: Number(coinflipStats[1]),
         totalWagered: formatEther(coinflipStats[2]),
-        winRate: coinflipStats[0] + coinflipStats[1] > 0n
+        winRate: coinflipStats[0] + coinflipStats[1] > BigInt(0)
           ? (Number(coinflipStats[0]) / (Number(coinflipStats[0]) + Number(coinflipStats[1])) * 100).toFixed(1)
           : '0',
       },
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
         eliminated: Number(rouletteStats[2]),
         totalWagered: formatEther(rouletteStats[3]),
         pnl: formatEther(rouletteStats[4]),
-        survivalRate: rouletteStats[1] + rouletteStats[2] > 0n
+        survivalRate: rouletteStats[1] + rouletteStats[2] > BigInt(0)
           ? (Number(rouletteStats[1]) / (Number(rouletteStats[1]) + Number(rouletteStats[2])) * 100).toFixed(1)
           : '0',
       },

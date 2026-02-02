@@ -9,6 +9,8 @@ import { injected } from "wagmi/connectors";
 const SHELL_TOKEN = "0xcfAD33C1188635B22BA97a7caBCF5bEd02fAe466";
 const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11";
 const ROULETTE_CONTRACT = "0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee";
+const HOUSE_BANKROLL = "0x1BB36A7BdF4eAa8321bbB177EaFc1cf26c7E573f";
+const HOUSE_TOKEN = "0x759a72ea84e5cc7f04a59830ec8a824b036bfc8b";
 
 // ERC20 ABI
 const ERC20_ABI = [
@@ -393,7 +395,7 @@ function getAllSecrets(): Record<number, { secret: string; choice: number; times
   return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
 }
 
-type Tab = "coinflip" | "roulette" | "mygames" | "stats";
+type Tab = "coinflip" | "roulette" | "house" | "mygames" | "stats";
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
@@ -497,6 +499,7 @@ export default function CasinoHome() {
               {[
                 { id: "coinflip" as Tab, label: "🪙 Coinflip" },
                 { id: "roulette" as Tab, label: "💀 Roulette" },
+                { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
               ].map((tab) => (
@@ -522,6 +525,7 @@ export default function CasinoHome() {
             {/* Tab Content */}
             {activeTab === "coinflip" && <CoinflipGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "roulette" && <RouletteGame address={address!} onBalanceChange={refetchBalance} />}
+            {activeTab === "house" && <HouseStaking address={address!} />}
             {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
           </>
@@ -1855,6 +1859,346 @@ function RoundCard({ roundId }: { roundId: bigint }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// House Token ABI
+const HOUSE_TOKEN_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "approve",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "allowance",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+// House Bankroll ABI
+const HOUSE_BANKROLL_ABI = [
+  {
+    name: "stake",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "unstake",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "claimRewards",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    name: "stakedBalance",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "staker", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "totalStaked",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "pendingRewards",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "staker", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "totalProfits",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+// 🏠 HOUSE STAKING - Become the house
+function HouseStaking({ address }: { address: `0x${string}` }) {
+  const [stakeAmount, setStakeAmount] = useState("100");
+  const [unstakeAmount, setUnstakeAmount] = useState("100");
+
+  // Read $HOUSE balance
+  const { data: houseBalance, refetch: refetchHouseBalance } = useReadContract({
+    address: HOUSE_TOKEN,
+    abi: HOUSE_TOKEN_ABI,
+    functionName: "balanceOf",
+    args: [address],
+  });
+
+  // Read allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: HOUSE_TOKEN,
+    abi: HOUSE_TOKEN_ABI,
+    functionName: "allowance",
+    args: [address, HOUSE_BANKROLL],
+  });
+
+  // Read staked balance
+  const { data: stakedBalance, refetch: refetchStaked } = useReadContract({
+    address: HOUSE_BANKROLL,
+    abi: HOUSE_BANKROLL_ABI,
+    functionName: "stakedBalance",
+    args: [address],
+  });
+
+  // Read total staked
+  const { data: totalStaked } = useReadContract({
+    address: HOUSE_BANKROLL,
+    abi: HOUSE_BANKROLL_ABI,
+    functionName: "totalStaked",
+  });
+
+  // Read pending rewards
+  const { data: pendingRewards, refetch: refetchRewards } = useReadContract({
+    address: HOUSE_BANKROLL,
+    abi: HOUSE_BANKROLL_ABI,
+    functionName: "pendingRewards",
+    args: [address],
+  });
+
+  // Approve
+  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
+  const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
+
+  // Stake
+  const { writeContract: stake, data: stakeHash, isPending: isStaking } = useWriteContract();
+  const { isSuccess: stakeSuccess } = useWaitForTransactionReceipt({ hash: stakeHash });
+
+  // Unstake
+  const { writeContract: unstake, data: unstakeHash, isPending: isUnstaking } = useWriteContract();
+  const { isSuccess: unstakeSuccess } = useWaitForTransactionReceipt({ hash: unstakeHash });
+
+  // Claim rewards
+  const { writeContract: claim, data: claimHash, isPending: isClaiming } = useWriteContract();
+  const { isSuccess: claimSuccess } = useWaitForTransactionReceipt({ hash: claimHash });
+
+  useEffect(() => {
+    if (approveSuccess) refetchAllowance();
+    if (stakeSuccess || unstakeSuccess || claimSuccess) {
+      refetchHouseBalance();
+      refetchStaked();
+      refetchRewards();
+    }
+  }, [approveSuccess, stakeSuccess, unstakeSuccess, claimSuccess]);
+
+  const stakeWei = parseEther(stakeAmount || "0");
+  const needsApproval = !allowance || allowance < stakeWei;
+
+  const handleApprove = () => {
+    approve({
+      address: HOUSE_TOKEN,
+      abi: HOUSE_TOKEN_ABI,
+      functionName: "approve",
+      args: [HOUSE_BANKROLL, parseEther("1000000000")],
+    });
+  };
+
+  const handleStake = () => {
+    stake({
+      address: HOUSE_BANKROLL,
+      abi: HOUSE_BANKROLL_ABI,
+      functionName: "stake",
+      args: [parseEther(stakeAmount)],
+    });
+  };
+
+  const handleUnstake = () => {
+    unstake({
+      address: HOUSE_BANKROLL,
+      abi: HOUSE_BANKROLL_ABI,
+      functionName: "unstake",
+      args: [parseEther(unstakeAmount)],
+    });
+  };
+
+  const handleClaim = () => {
+    claim({
+      address: HOUSE_BANKROLL,
+      abi: HOUSE_BANKROLL_ABI,
+      functionName: "claimRewards",
+      args: [],
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 rounded-xl p-6 border border-purple-500/30">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              🏠 House Staking
+            </h2>
+            <p className="text-gray-400 text-sm">Stake $HOUSE to become the bankroll for PvH games</p>
+          </div>
+          <a 
+            href="https://mint.club/token/base/HOUSE" 
+            target="_blank"
+            className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 rounded-lg text-purple-300 text-sm transition"
+          >
+            Buy $HOUSE ↗
+          </a>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-purple-500/20">
+          <div>
+            <div className="text-xs text-gray-500">Your Balance</div>
+            <div className="text-white font-bold">
+              {houseBalance ? parseFloat(formatEther(houseBalance)).toFixed(2) : "0"} $HOUSE
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Your Staked</div>
+            <div className="text-purple-400 font-bold">
+              {stakedBalance ? parseFloat(formatEther(stakedBalance)).toFixed(2) : "0"} $HOUSE
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Total Staked</div>
+            <div className="text-blue-400 font-bold">
+              {totalStaked ? parseFloat(formatEther(totalStaked)).toFixed(2) : "0"} $HOUSE
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Pending Rewards</div>
+            <div className="text-green-400 font-bold">
+              {pendingRewards ? parseFloat(formatEther(pendingRewards)).toFixed(4) : "0"} $SHELL
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div className="bg-[#1a1a1b] rounded-xl p-5 border border-gray-800">
+        <h3 className="font-bold text-lg mb-4">💡 How House Staking Works</h3>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2 text-sm text-gray-400">
+            <p>• Stake $HOUSE tokens to provide bankroll</p>
+            <p>• House has ~2% edge on PvH games</p>
+            <p>• Earn proportional share of house profits</p>
+          </div>
+          <div className="space-y-2 text-sm text-gray-400">
+            <p>• 10% max exposure per game (safety limit)</p>
+            <p>• Share losses if house loses (rare)</p>
+            <p>• Unstake anytime</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Stake */}
+        <div className="bg-[#1a1a1b] rounded-xl p-5 border border-gray-800">
+          <h3 className="font-bold text-lg mb-4 text-green-400">📥 Stake</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Amount ($HOUSE)</label>
+              <input
+                type="number"
+                value={stakeAmount}
+                onChange={(e) => setStakeAmount(e.target.value)}
+                className="w-full bg-[#272729] border border-gray-700 rounded-lg px-4 py-2 text-white"
+              />
+            </div>
+            {needsApproval ? (
+              <button
+                onClick={handleApprove}
+                disabled={isApproving}
+                className="w-full py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 rounded-lg font-bold"
+              >
+                {isApproving ? "Approving..." : "Approve $HOUSE"}
+              </button>
+            ) : (
+              <button
+                onClick={handleStake}
+                disabled={isStaking || !stakeAmount}
+                className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 rounded-lg font-bold"
+              >
+                {isStaking ? "Staking..." : `Stake ${stakeAmount} $HOUSE`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Unstake */}
+        <div className="bg-[#1a1a1b] rounded-xl p-5 border border-gray-800">
+          <h3 className="font-bold text-lg mb-4 text-red-400">📤 Unstake</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Amount ($HOUSE)</label>
+              <input
+                type="number"
+                value={unstakeAmount}
+                onChange={(e) => setUnstakeAmount(e.target.value)}
+                className="w-full bg-[#272729] border border-gray-700 rounded-lg px-4 py-2 text-white"
+              />
+            </div>
+            <button
+              onClick={handleUnstake}
+              disabled={isUnstaking || !unstakeAmount || !stakedBalance || parseEther(unstakeAmount) > stakedBalance}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 rounded-lg font-bold"
+            >
+              {isUnstaking ? "Unstaking..." : `Unstake ${unstakeAmount} $HOUSE`}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Claim Rewards */}
+      {pendingRewards && pendingRewards > BigInt(0) && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-lg text-green-400">💰 Rewards Available!</h3>
+              <p className="text-gray-400 text-sm">
+                You have {parseFloat(formatEther(pendingRewards)).toFixed(4)} $SHELL to claim
+              </p>
+            </div>
+            <button
+              onClick={handleClaim}
+              disabled={isClaiming}
+              className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 rounded-lg font-bold"
+            >
+              {isClaiming ? "Claiming..." : "Claim Rewards"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

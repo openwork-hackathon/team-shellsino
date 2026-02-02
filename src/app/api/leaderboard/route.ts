@@ -36,7 +36,7 @@ export async function GET() {
             address: COINFLIP_CONTRACT,
             abi: COINFLIP_ABI,
             functionName: "getAgentStats",
-            args: [address as \`0x\${string}\`],
+            args: [address as `0x${string}`],
           });
           
           const wins = Number(stats[0]);
