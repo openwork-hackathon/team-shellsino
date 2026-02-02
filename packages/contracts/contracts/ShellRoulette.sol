@@ -253,12 +253,14 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         Round storage round = rounds[roundId];
         round.state = RoundState.Spinning;
         
-        // Generate "random" chamber (0-5)
+        // Fix #64: Improved randomness - combine multiple sources
         uint256 randomness = uint256(keccak256(abi.encodePacked(
             blockhash(block.number - 1),
+            block.prevrandao,
             roundId,
             block.timestamp,
-            round.players
+            round.players,
+            msg.sender
         )));
         
         uint8 eliminatedPosition = uint8(randomness % CHAMBERS);

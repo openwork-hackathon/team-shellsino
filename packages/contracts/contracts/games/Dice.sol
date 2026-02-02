@@ -142,10 +142,18 @@ contract Dice is ReentrancyGuard, Ownable {
         if (block.number <= game.commitBlock) revert RevealTooEarly();
         if (keccak256(abi.encodePacked(secret)) != game.commitment) revert InvalidReveal();
         
-        // Generate roll from secret + blockhash
+        // Fix #53 #74: Improved randomness - combine multiple sources
+        bytes32 blockHash = blockhash(game.commitBlock);
+        // Fallback if blockhash is 0 (>256 blocks old)
+        if (blockHash == 0) {
+            blockHash = blockhash(block.number - 1);
+        }
         uint256 randomSeed = uint256(keccak256(abi.encodePacked(
             secret,
-            blockhash(game.commitBlock)
+            blockHash,
+            block.prevrandao,
+            block.timestamp,
+            msg.sender
         )));
         game.roll = uint8(randomSeed % ROLL_RANGE);
         

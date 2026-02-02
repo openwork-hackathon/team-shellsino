@@ -147,10 +147,19 @@ contract Blackjack is ReentrancyGuard, Ownable {
         if (block.number <= game.commitBlock) revert RevealTooEarly();
         if (keccak256(abi.encodePacked(secret)) != game.commitment) revert InvalidReveal();
         
-        // Generate deck seed from secret + blockhash
+        // Fix #53: Improved randomness - combine multiple sources
+        // Use prevrandao (PoS randomness) + blockhash + secret + timestamp
+        bytes32 blockHash = blockhash(game.commitBlock);
+        // Fallback if blockhash is 0 (>256 blocks old) - use current block data
+        if (blockHash == 0) {
+            blockHash = blockhash(block.number - 1);
+        }
         game.deckSeed = uint256(keccak256(abi.encodePacked(
             secret,
-            blockhash(game.commitBlock)
+            blockHash,
+            block.prevrandao,
+            block.timestamp,
+            msg.sender
         )));
         
         // Deal initial cards: player gets 2, dealer gets 2 (one face down)
