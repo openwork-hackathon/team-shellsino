@@ -785,9 +785,20 @@ function AgentVerification({
   const [verifying, setVerifying] = useState(false);
   const [moltbookAgent, setMoltbookAgent] = useState<any>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [quickMode, setQuickMode] = useState(false);
 
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  // Auto-refresh after successful registration
+  useEffect(() => {
+    if (isSuccess) {
+      const timer = setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess]);
 
   const checkMoltbook = async () => {
     if (!agentName.trim()) {
@@ -815,7 +826,8 @@ function AgentVerification({
   };
 
   const handleRegister = async () => {
-    if (!agentName || !moltbookAgent) return;
+    if (!agentName.trim()) return;
+    if (!quickMode && !moltbookAgent) return;
     writeContract({
       address: COINFLIP_CONTRACT,
       abi: COINFLIP_ABI,
@@ -829,13 +841,37 @@ function AgentVerification({
       <div className="bg-[#1a1a1b] rounded-lg p-6 border border-gray-800">
         <div className="text-center mb-6">
           <div className="text-5xl mb-4">🦞</div>
-          <h2 className="text-xl font-bold mb-2">Verify Your Agent</h2>
-          <p className="text-gray-400 text-sm">Enter your Moltbook username to verify</p>
+          <h2 className="text-xl font-bold mb-2">Register Your Agent</h2>
+          <p className="text-gray-400 text-sm">
+            {quickMode ? 'Enter any name to get started' : 'Verify via Moltbook or use Quick Register'}
+          </p>
         </div>
 
         <div className="space-y-4">
+          {/* Mode Toggle */}
+          <div className="flex gap-2 p-1 bg-[#272729] rounded">
+            <button
+              onClick={() => { setQuickMode(false); setVerifyError(null); }}
+              className={`flex-1 py-2 px-3 rounded text-sm font-medium transition ${
+                !quickMode ? 'bg-red-500 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Moltbook Verify
+            </button>
+            <button
+              onClick={() => { setQuickMode(true); setVerifyError(null); setMoltbookAgent(null); }}
+              className={`flex-1 py-2 px-3 rounded text-sm font-medium transition ${
+                quickMode ? 'bg-red-500 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Quick Register
+            </button>
+          </div>
+
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Moltbook Username</label>
+            <label className="block text-sm text-gray-400 mb-2">
+              {quickMode ? 'Agent Name' : 'Moltbook Username'}
+            </label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -845,27 +881,42 @@ function AgentVerification({
                   setMoltbookAgent(null);
                   setVerifyError(null);
                 }}
-                placeholder="e.g. Flipcee"
+                placeholder={quickMode ? "e.g. CoolAgent123" : "e.g. Flipcee"}
                 maxLength={32}
                 className="flex-1 px-4 py-3 bg-[#272729] rounded border border-gray-700 focus:border-red-500 focus:outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !quickMode && agentName.trim()) {
+                    checkMoltbook();
+                  }
+                }}
               />
-              <button
-                onClick={checkMoltbook}
-                disabled={verifying || !agentName.trim()}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded font-medium transition"
-              >
-                {verifying ? "..." : "Verify"}
-              </button>
+              {!quickMode && (
+                <button
+                  onClick={checkMoltbook}
+                  disabled={verifying || !agentName.trim()}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded font-medium transition"
+                >
+                  {verifying ? "..." : "Verify"}
+                </button>
+              )}
             </div>
           </div>
 
           {verifyError && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
               {verifyError}
+              {verifyError.includes('not found') && (
+                <button 
+                  onClick={() => setQuickMode(true)}
+                  className="block mt-2 text-yellow-400 hover:underline"
+                >
+                  → Use Quick Register instead
+                </button>
+              )}
             </div>
           )}
 
-          {moltbookAgent && (
+          {moltbookAgent && !quickMode && (
             <div className="p-4 bg-green-500/10 border border-green-500/30 rounded">
               <div className="flex items-center gap-3">
                 <div className="text-3xl">✅</div>
@@ -885,20 +936,33 @@ function AgentVerification({
 
           <button
             onClick={handleRegister}
-            disabled={!moltbookAgent || isPending || isConfirming}
+            disabled={(!quickMode && !moltbookAgent) || !agentName.trim() || isPending || isConfirming}
             className="w-full py-3 bg-red-500 hover:bg-red-600 disabled:bg-gray-700 disabled:cursor-not-allowed rounded font-medium transition"
           >
-            {isPending || isConfirming ? "Registering..." : moltbookAgent ? "Register & Play 🎰" : "Verify First"}
+            {isPending || isConfirming 
+              ? "Registering..." 
+              : isSuccess 
+                ? "✓ Registered! Redirecting..." 
+                : quickMode 
+                  ? (agentName.trim() ? "Register & Play 🎰" : "Enter a name")
+                  : (moltbookAgent ? "Register & Play 🎰" : "Verify First")}
           </button>
 
           {isSuccess && (
-            <p className="text-green-400 text-center text-sm">
-              ✓ Registered! Refresh to continue.
+            <div className="text-center">
+              <div className="text-green-400 text-sm mb-2">✓ Registered successfully!</div>
+              <div className="text-gray-500 text-xs animate-pulse">Refreshing in 2 seconds...</div>
+            </div>
+          )}
+
+          {quickMode && (
+            <p className="text-xs text-yellow-500/70 text-center">
+              ⚠️ Quick register skips Moltbook verification. Your agent name won't be linked to a Moltbook profile.
             </p>
           )}
 
           <p className="text-xs text-gray-500 text-center">
-            Not on Moltbook? <a href="https://moltbook.com" target="_blank" className="text-red-400 hover:underline">Register first</a>
+            New to agent social? <a href="https://moltbook.com" target="_blank" className="text-red-400 hover:underline">Join Moltbook</a>
           </p>
         </div>
       </div>
