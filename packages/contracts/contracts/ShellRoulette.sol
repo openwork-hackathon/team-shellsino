@@ -26,11 +26,14 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     uint256 public maxBet = 1000e18;        // 1000 $SHELL maximum
     uint256 public protocolFeeBps = 200;    // 2% fee
     
+    // Round timeout
+    uint256 public roundTimeout = 2 hours;   // Time before incomplete round can be cancelled
+    
     uint256 public totalRoundsPlayed;
     uint256 public totalVolume;
     uint256 public totalEliminated;
     
-    enum RoundState { Open, Spinning, Complete }
+    enum RoundState { Open, Spinning, Complete, Cancelled }
     
     struct Round {
         uint256 betAmount;
@@ -54,9 +57,14 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     // Track private round invites per agent
     mapping(address => uint256[]) public privateInvites;
     
-    // Agent registry
+    // Agent registry with verification status
+    enum VerificationStatus { None, Pending, Verified }
+    mapping(address => VerificationStatus) public agentStatus;
     mapping(address => bool) public verifiedAgents;
     mapping(address => string) public agentNames;
+    
+    // Verifier role for Moltbook identity verification
+    mapping(address => bool) public verifiers;
     
     // Stats
     mapping(address => uint256) public survivalCount;
@@ -71,9 +79,15 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     event AgentEliminated(uint256 indexed roundId, address indexed eliminated, uint256 lostAmount);
     event AgentSurvived(uint256 indexed roundId, address indexed survivor, uint256 wonAmount);
     event AgentVerified(address indexed agent, string name);
+    event AgentRegistered(address indexed agent, string name);
+    event AgentVerifiedByMoltbook(address indexed agent, address indexed verifier);
+    event VerifierUpdated(address indexed verifier, bool status);
+    event RoundCancelled(uint256 indexed roundId, string reason);
     
     constructor(address _shellToken) Ownable(msg.sender) {
         shellToken = IERC20(_shellToken);
+        // Owner is initial verifier
+        verifiers[msg.sender] = true;
     }
     
     modifier onlyVerifiedAgent() {
@@ -81,14 +95,65 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         _;
     }
     
+    modifier onlyVerifier() {
+        require(verifiers[msg.sender], "Not a verifier");
+        _;
+    }
+    
+    // ============ MOLTBOOK IDENTITY VERIFICATION ============
+    
     /**
-     * @notice Register as a verified agent
+     * @notice Register as an agent (pending verification)
+     * @param name Your agent name (must match Moltbook username)
      */
     function registerAgent(string calldata name) external {
         require(bytes(name).length > 0 && bytes(name).length <= 32, "Invalid name");
+        
         verifiedAgents[msg.sender] = true;
         agentNames[msg.sender] = name;
+        
+        if (agentStatus[msg.sender] == VerificationStatus.None) {
+            agentStatus[msg.sender] = VerificationStatus.Pending;
+            emit AgentRegistered(msg.sender, name);
+        }
+        
         emit AgentVerified(msg.sender, name);
+    }
+    
+    /**
+     * @notice Verifier confirms agent's Moltbook identity
+     */
+    function verifyAgentIdentity(address agent) external onlyVerifier {
+        require(agentStatus[agent] == VerificationStatus.Pending, "Agent not pending");
+        agentStatus[agent] = VerificationStatus.Verified;
+        emit AgentVerifiedByMoltbook(agent, msg.sender);
+    }
+    
+    /**
+     * @notice Batch verify multiple agents
+     */
+    function batchVerifyAgents(address[] calldata agents) external onlyVerifier {
+        for (uint256 i = 0; i < agents.length; i++) {
+            if (agentStatus[agents[i]] == VerificationStatus.Pending) {
+                agentStatus[agents[i]] = VerificationStatus.Verified;
+                emit AgentVerifiedByMoltbook(agents[i], msg.sender);
+            }
+        }
+    }
+    
+    /**
+     * @notice Check if agent has Moltbook-verified identity
+     */
+    function isMoltbookVerified(address agent) external view returns (bool) {
+        return agentStatus[agent] == VerificationStatus.Verified;
+    }
+    
+    /**
+     * @notice Add or remove verifier
+     */
+    function setVerifier(address verifier, bool status) external onlyOwner {
+        verifiers[verifier] = status;
+        emit VerifierUpdated(verifier, status);
     }
     
     /**
@@ -427,6 +492,70 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         return (survivalCount[agent] * 10000) / total;
     }
     
+    // ============ ROUND TIMEOUT / CANCELLATION ============
+    
+    /**
+     * @notice Cancel an expired round and refund all players
+     * @dev Anyone can call this for expired rounds to unlock funds
+     */
+    function cancelExpiredRound(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        require(round.state == RoundState.Open, "Round not open");
+        require(block.timestamp > round.createdAt + roundTimeout, "Round not expired");
+        
+        round.state = RoundState.Cancelled;
+        
+        // Refund all players
+        for (uint8 i = 0; i < round.playerCount; i++) {
+            address player = round.players[i];
+            shellToken.safeTransfer(player, round.betAmount);
+        }
+        
+        emit RoundCancelled(roundId, "Round timeout - not enough players");
+    }
+    
+    /**
+     * @notice Creator can cancel their private round if it hasn't filled
+     */
+    function cancelPrivateRound(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        require(round.state == RoundState.Open, "Round not open");
+        require(round.isPrivate, "Not a private round");
+        require(round.creator == msg.sender, "Only creator can cancel");
+        
+        round.state = RoundState.Cancelled;
+        
+        // Refund all players
+        for (uint8 i = 0; i < round.playerCount; i++) {
+            address player = round.players[i];
+            shellToken.safeTransfer(player, round.betAmount);
+        }
+        
+        emit RoundCancelled(roundId, "Creator cancelled private round");
+    }
+    
+    /**
+     * @notice Check if a round has expired
+     */
+    function isRoundExpired(uint256 roundId) external view returns (bool) {
+        Round storage round = rounds[roundId];
+        if (round.state != RoundState.Open) return false;
+        return block.timestamp > round.createdAt + roundTimeout;
+    }
+    
+    /**
+     * @notice Get agent verification info
+     */
+    function getAgentVerification(address agent) external view returns (
+        bool canPlay,
+        bool moltbookVerified
+    ) {
+        return (
+            verifiedAgents[agent],
+            agentStatus[agent] == VerificationStatus.Verified
+        );
+    }
+    
     // ============ ADMIN ============
     
     function setMinBet(uint256 _minBet) external onlyOwner {
@@ -440,5 +569,10 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
     function setProtocolFee(uint256 _feeBps) external onlyOwner {
         require(_feeBps <= 500, "Max 5% fee");
         protocolFeeBps = _feeBps;
+    }
+    
+    function setRoundTimeout(uint256 _timeout) external onlyOwner {
+        require(_timeout >= 30 minutes && _timeout <= 24 hours, "Invalid timeout");
+        roundTimeout = _timeout;
     }
 }

@@ -1155,6 +1155,221 @@ describe("🎰 SHELLSINO BULLETPROOF TEST SUITE", function () {
   });
 
   // ═══════════════════════════════════════════════════════════════════
+  // 🔐 MOLTBOOK IDENTITY VERIFICATION
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("🔐 MOLTBOOK VERIFICATION - Coinflip", function () {
+    
+    it("✅ should start agents as Pending status after registration", async function () {
+      // agent1 was already registered, check their status
+      const status = await coinflip.agentStatus(agent1.address);
+      expect(status).to.equal(1); // 1 = Pending
+    });
+    
+    it("✅ should allow owner (verifier) to verify agent identity", async function () {
+      await coinflip.connect(owner).verifyAgentIdentity(agent1.address);
+      const status = await coinflip.agentStatus(agent1.address);
+      expect(status).to.equal(2); // 2 = Verified
+      const isVerified = await coinflip.isMoltbookVerified(agent1.address);
+      expect(isVerified).to.be.true;
+      console.log("      ✅ Agent1 Moltbook identity verified!");
+    });
+    
+    it("✅ should reject verification of non-pending agent", async function () {
+      await expect(
+        coinflip.connect(owner).verifyAgentIdentity(agent1.address)
+      ).to.be.revertedWith("Agent not pending");
+    });
+    
+    it("✅ should allow batch verification", async function () {
+      // Verify multiple agents at once
+      await coinflip.connect(owner).batchVerifyAgents([agent2.address, agent3.address]);
+      expect(await coinflip.isMoltbookVerified(agent2.address)).to.be.true;
+      expect(await coinflip.isMoltbookVerified(agent3.address)).to.be.true;
+      console.log("      ✅ Batch verified agents 2 and 3!");
+    });
+    
+    it("✅ should allow adding new verifiers", async function () {
+      await coinflip.connect(owner).setVerifier(agent1.address, true);
+      expect(await coinflip.verifiers(agent1.address)).to.be.true;
+      
+      // New verifier can verify agents
+      await coinflip.connect(agent1).verifyAgentIdentity(agent4.address);
+      expect(await coinflip.isMoltbookVerified(agent4.address)).to.be.true;
+      console.log("      ✅ Agent1 became verifier and verified Agent4!");
+    });
+    
+    it("✅ should reject non-verifier from verifying", async function () {
+      await expect(
+        coinflip.connect(agent8).verifyAgentIdentity(agent5.address)
+      ).to.be.revertedWith("Not a verifier");
+    });
+    
+    it("✅ should return correct profile with verification status", async function () {
+      const profile = await coinflip.getAgentProfile(agent1.address);
+      expect(profile.name).to.equal("Alice");
+      expect(profile.canPlay).to.be.true;
+      expect(profile.moltbookVerified).to.be.true;
+      console.log("      📋 Agent1 profile: canPlay=true, moltbookVerified=true");
+    });
+  });
+
+  describe("🔐 MOLTBOOK VERIFICATION - Roulette", function () {
+    
+    it("✅ should have same verification system", async function () {
+      // Verify agent in roulette
+      await roulette.connect(owner).verifyAgentIdentity(agent1.address);
+      expect(await roulette.isMoltbookVerified(agent1.address)).to.be.true;
+      
+      await roulette.connect(owner).batchVerifyAgents([agent2.address, agent3.address]);
+      expect(await roulette.isMoltbookVerified(agent2.address)).to.be.true;
+      console.log("      ✅ Roulette verification working!");
+    });
+    
+    it("✅ should return verification info", async function () {
+      const [canPlay, moltbookVerified] = await roulette.getAgentVerification(agent1.address);
+      expect(canPlay).to.be.true;
+      expect(moltbookVerified).to.be.true;
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ⏰ GAME TIMEOUT TESTS
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("⏰ TIMEOUT - Coinflip Expiry", function () {
+    
+    it("✅ should report game expiry status", async function () {
+      const secret = ethers.randomBytes(32);
+      const commitment = ethers.keccak256(ethers.solidityPacked(["uint8", "bytes32"], [0, secret]));
+      
+      await coinflip.connect(agent1).createGame(ethers.parseEther("10"), commitment);
+      const gameId = await coinflip.nextGameId() - 1n;
+      
+      // Not expired yet
+      let [expired, reason] = await coinflip.isGameExpired(gameId);
+      expect(expired).to.be.false;
+      
+      // Fast forward past timeout
+      await ethers.provider.send("evm_increaseTime", [3601]);
+      await ethers.provider.send("evm_mine");
+      
+      [expired, reason] = await coinflip.isGameExpired(gameId);
+      expect(expired).to.be.true;
+      expect(reason).to.equal("No opponent joined in time");
+      console.log("      ⏰ Game expiry detection working!");
+      
+      // Clean up
+      await coinflip.connect(agent1).cancelGame(gameId);
+    });
+    
+    it("✅ should reject joining expired game", async function () {
+      const secret = ethers.randomBytes(32);
+      const commitment = ethers.keccak256(ethers.solidityPacked(["uint8", "bytes32"], [0, secret]));
+      
+      await coinflip.connect(agent1).createGame(ethers.parseEther("10"), commitment);
+      const gameId = await coinflip.nextGameId() - 1n;
+      
+      // Fast forward past timeout
+      await ethers.provider.send("evm_increaseTime", [3601]);
+      await ethers.provider.send("evm_mine");
+      
+      await expect(
+        coinflip.connect(agent2).joinGame(gameId, 1)
+      ).to.be.revertedWith("Game expired");
+      
+      // Clean up
+      await coinflip.connect(agent1).cancelGame(gameId);
+      console.log("      ✅ Expired game cannot be joined!");
+    });
+    
+    it("✅ should allow owner to configure timeouts", async function () {
+      // Set game timeout to 30 minutes
+      await coinflip.connect(owner).setGameTimeout(30 * 60);
+      expect(await coinflip.gameTimeout()).to.equal(30 * 60);
+      
+      // Set reveal timeout to 45 minutes
+      await coinflip.connect(owner).setRevealTimeout(45 * 60);
+      expect(await coinflip.revealTimeout()).to.equal(45 * 60);
+      
+      // Reset to defaults
+      await coinflip.connect(owner).setGameTimeout(3600);
+      await coinflip.connect(owner).setRevealTimeout(3600);
+      console.log("      ⚙️ Timeout configuration working!");
+    });
+    
+    it("✅ should reject invalid timeout values", async function () {
+      // Too short
+      await expect(
+        coinflip.connect(owner).setGameTimeout(60) // 1 minute - too short
+      ).to.be.revertedWith("Invalid timeout");
+      
+      // Too long
+      await expect(
+        coinflip.connect(owner).setGameTimeout(100000) // > 24 hours
+      ).to.be.revertedWith("Invalid timeout");
+    });
+  });
+
+  describe("⏰ TIMEOUT - Roulette Expiry", function () {
+    
+    it("✅ should detect expired rounds", async function () {
+      await roulette.connect(agent7).registerAgent("Greg");
+      await shell.connect(agent7).approve(await roulette.getAddress(), ethers.parseEther("10000"));
+      
+      await roulette.connect(agent7).enterChamber(ethers.parseEther("77"));
+      const roundId = await roulette.nextRoundId() - 1n;
+      
+      // Not expired yet
+      expect(await roulette.isRoundExpired(roundId)).to.be.false;
+      
+      // Fast forward past timeout (2 hours default)
+      await ethers.provider.send("evm_increaseTime", [7201]);
+      await ethers.provider.send("evm_mine");
+      
+      expect(await roulette.isRoundExpired(roundId)).to.be.true;
+      console.log("      ⏰ Round expiry detection working!");
+    });
+    
+    it("✅ should allow cancelling expired rounds with refund", async function () {
+      const roundId = await roulette.nextRoundId() - 1n;
+      
+      const balBefore = await shell.balanceOf(agent7.address);
+      await roulette.connect(agent8).cancelExpiredRound(roundId);
+      const balAfter = await shell.balanceOf(agent7.address);
+      
+      // Agent7 got their 77 SHELL back
+      expect(balAfter - balBefore).to.equal(ethers.parseEther("77"));
+      console.log("      💸 Expired round cancelled, 77 SHELL refunded!");
+    });
+    
+    it("✅ should allow creator to cancel private round", async function () {
+      // Create private round
+      await roulette.connect(agent1).createPrivateRound(
+        ethers.parseEther("50"),
+        [agent2.address, agent3.address]
+      );
+      const roundId = await roulette.nextRoundId() - 1n;
+      
+      const balBefore = await shell.balanceOf(agent1.address);
+      await roulette.connect(agent1).cancelPrivateRound(roundId);
+      const balAfter = await shell.balanceOf(agent1.address);
+      
+      // Got refund
+      expect(balAfter - balBefore).to.equal(ethers.parseEther("50"));
+      console.log("      💸 Private round cancelled by creator!");
+    });
+    
+    it("✅ should allow owner to configure round timeout", async function () {
+      await roulette.connect(owner).setRoundTimeout(90 * 60); // 90 minutes
+      expect(await roulette.roundTimeout()).to.equal(90 * 60);
+      
+      // Reset
+      await roulette.connect(owner).setRoundTimeout(2 * 60 * 60);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
   // 📊 FINAL SUMMARY
   // ═══════════════════════════════════════════════════════════════════
 

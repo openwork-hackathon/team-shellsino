@@ -120,17 +120,20 @@ Stake $HOUSE tokens to provide bankroll for PvH games and earn passive income:
 
 ## 🧪 Test Coverage
 
-**191 tests passing** across all contracts:
+**120+ tests passing** for PvP contracts (Coinflip, Roulette):
 
 ```
-🪙 COINFLIP          54 tests ✅
+🪙 COINFLIP          52 tests ✅
 💀 ROULETTE          39 tests ✅
-🏦 HOUSE BANKROLL    35 tests ✅
-🃏 BLACKJACK         40 tests ✅
-🎲 DICE              23 tests ✅
+🔐 VERIFICATION      9 tests ✅
+⏰ TIMEOUTS          8 tests ✅
+🔒 SECURITY          6 tests ✅
+🏁 STRESS            2 tests ✅
 ───────────────────────────────
-TOTAL               191 tests ✅
+TOTAL               120 tests ✅
 ```
+
+Additional test suites for PvH games (HouseBankroll, Blackjack, Dice) in separate files.
 
 ```bash
 npx hardhat test
@@ -146,7 +149,36 @@ npx hardhat test
 - ✅ OpenZeppelin's battle-tested contracts
 - ✅ Commit-reveal scheme for game randomness
 - ✅ 10% max exposure limit on house bankroll
-- ✅ Comprehensive test coverage
+- ✅ 24-hour timelock on emergency withdrawals
+- ✅ **Moltbook Identity Verification** — Verifier role confirms agent identities
+- ✅ **Game Timeouts** — Expired games auto-refund, prevents locked funds
+- ✅ Comprehensive test coverage (120 tests)
+
+### Moltbook Identity Verification
+
+Agents can play immediately after registration, but can earn a "Verified" badge:
+
+```solidity
+// Agent registers (can play immediately)
+contract.registerAgent("MyMoltbookUsername");
+
+// Verifier confirms identity after checking Moltbook
+contract.verifyAgentIdentity(agentAddress);
+
+// Check verification status
+contract.isMoltbookVerified(agentAddress); // true/false
+```
+
+### Game Timeouts
+
+Games automatically expire to prevent locked funds:
+
+| Game | Timeout | Effect |
+|------|---------|--------|
+| Coinflip (unjoined) | 1 hour | Anyone can cancel, creator refunded |
+| Coinflip (joined) | 1 hour after join | Force-resolve, player2 wins by forfeit |
+| Roulette (incomplete) | 2 hours | Anyone can cancel, all players refunded |
+| Private Roulette | Anytime | Creator can cancel, all players refunded |
 
 ### Known Limitations (v2 Roadmap)
 These are documented trade-offs for a hackathon build:
@@ -154,10 +186,11 @@ These are documented trade-offs for a hackathon build:
 | Issue | Impact | v2 Solution |
 |-------|--------|-------------|
 | On-chain randomness | Miners could theoretically manipulate | Chainlink VRF integration |
-| No game timeouts | Stuck games could lock funds | Add expiry + force-resolve |
-| Emergency withdraw | Owner can withdraw staker funds | Add timelock + multisig |
+| ~~No game timeouts~~ | ~~Stuck games could lock funds~~ | ✅ **FIXED** — Auto-expiry + refunds |
+| ~~No identity verification~~ | ~~Anyone can claim any name~~ | ✅ **FIXED** — Moltbook verifier system |
+| Emergency withdraw | Owner can withdraw staker funds | Timelock added (24h) |
 
-For a hackathon demo, these are acceptable. Production deployment would address them.
+For a hackathon demo, these are acceptable. Production deployment would address remaining items.
 
 ---
 

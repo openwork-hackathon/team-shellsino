@@ -25,6 +25,10 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
     uint256 public totalGamesPlayed;
     uint256 public totalVolume;
     
+    // Game timeouts
+    uint256 public gameTimeout = 1 hours;           // Time before unjoined game can be cancelled
+    uint256 public revealTimeout = 1 hours;         // Time after join before force-resolve
+    
     // Game states
     enum GameState { None, Created, Joined, Resolved }
     
@@ -37,15 +41,21 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         uint8 player2Choice;    // 0 = heads, 1 = tails
         GameState state;
         uint256 createdAt;
+        uint256 joinedAt;       // NEW: Track when player2 joined for reveal timeout
         address winner;
     }
     
     mapping(uint256 => Game) public games;
     uint256 public nextGameId = 1;
     
-    // Agent registry
-    mapping(address => bool) public verifiedAgents;
+    // Agent registry with verification status
+    enum VerificationStatus { None, Pending, Verified }
+    mapping(address => VerificationStatus) public agentStatus;
     mapping(address => string) public agentNames;
+    mapping(address => bool) public verifiedAgents;  // Backwards compatibility
+    
+    // Verifier role for Moltbook identity verification
+    mapping(address => bool) public verifiers;
     
     // Stats
     mapping(address => uint256) public wins;
@@ -60,11 +70,17 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
     event GameJoined(uint256 indexed gameId, address indexed player2, uint8 choice);
     event GameResolved(uint256 indexed gameId, address indexed winner, uint256 payout);
     event AgentVerified(address indexed agent, string name);
+    event AgentRegistered(address indexed agent, string name);
+    event AgentVerifiedByMoltbook(address indexed agent, address indexed verifier);
+    event VerifierUpdated(address indexed verifier, bool status);
     event GameCancelled(uint256 indexed gameId);
+    event GameExpired(uint256 indexed gameId, string reason);
     event ChallengeIssued(uint256 indexed gameId, address indexed challenger, address indexed challenged, uint256 betAmount);
     
     constructor(address _shellToken) Ownable(msg.sender) {
         shellToken = IERC20(_shellToken);
+        // Owner is initial verifier
+        verifiers[msg.sender] = true;
     }
     
     modifier onlyVerifiedAgent() {
@@ -72,15 +88,71 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         _;
     }
     
+    modifier onlyVerifier() {
+        require(verifiers[msg.sender], "Not a verifier");
+        _;
+    }
+    
+    // ============ MOLTBOOK IDENTITY VERIFICATION ============
+    
     /**
-     * @notice Register as a verified agent
-     * @param name Your agent name (e.g., Moltbook username)
+     * @notice Register as an agent (pending verification)
+     * @param name Your agent name (must match Moltbook username)
+     * @dev Agent can play immediately, but "Verified" badge requires verifier approval
      */
     function registerAgent(string calldata name) external {
         require(bytes(name).length > 0 && bytes(name).length <= 32, "Invalid name");
+        
+        // Allow playing immediately (backwards compatible)
         verifiedAgents[msg.sender] = true;
         agentNames[msg.sender] = name;
+        
+        // Set pending status for Moltbook verification
+        if (agentStatus[msg.sender] == VerificationStatus.None) {
+            agentStatus[msg.sender] = VerificationStatus.Pending;
+            emit AgentRegistered(msg.sender, name);
+        }
+        
         emit AgentVerified(msg.sender, name);
+    }
+    
+    /**
+     * @notice Verifier confirms agent's Moltbook identity
+     * @param agent Address to verify
+     * @dev Called by authorized verifier after checking Moltbook
+     */
+    function verifyAgentIdentity(address agent) external onlyVerifier {
+        require(agentStatus[agent] == VerificationStatus.Pending, "Agent not pending");
+        agentStatus[agent] = VerificationStatus.Verified;
+        emit AgentVerifiedByMoltbook(agent, msg.sender);
+    }
+    
+    /**
+     * @notice Batch verify multiple agents
+     * @param agents Array of addresses to verify
+     */
+    function batchVerifyAgents(address[] calldata agents) external onlyVerifier {
+        for (uint256 i = 0; i < agents.length; i++) {
+            if (agentStatus[agents[i]] == VerificationStatus.Pending) {
+                agentStatus[agents[i]] = VerificationStatus.Verified;
+                emit AgentVerifiedByMoltbook(agents[i], msg.sender);
+            }
+        }
+    }
+    
+    /**
+     * @notice Check if agent has Moltbook-verified identity
+     */
+    function isMoltbookVerified(address agent) external view returns (bool) {
+        return agentStatus[agent] == VerificationStatus.Verified;
+    }
+    
+    /**
+     * @notice Add or remove verifier
+     */
+    function setVerifier(address verifier, bool status) external onlyOwner {
+        verifiers[verifier] = status;
+        emit VerifierUpdated(verifier, status);
     }
     
     /**
@@ -133,6 +205,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
             player2Choice: 0,
             state: GameState.Created,
             createdAt: block.timestamp,
+            joinedAt: 0,
             winner: address(0)
         });
         
@@ -151,6 +224,9 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         require(game.player1 != msg.sender, "Cannot play yourself");
         require(choice <= 1, "Choice must be 0 or 1");
         
+        // Check game hasn't expired
+        require(block.timestamp <= game.createdAt + gameTimeout, "Game expired");
+        
         // Check if this is a private challenge
         if (game.challenged != address(0)) {
             require(game.challenged == msg.sender, "This challenge is for another agent");
@@ -162,6 +238,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         game.player2 = msg.sender;
         game.player2Choice = choice;
         game.state = GameState.Joined;
+        game.joinedAt = block.timestamp;
         
         emit GameJoined(gameId, msg.sender, choice);
     }
@@ -210,26 +287,35 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @notice Cancel a game that hasn't been joined
+     * @notice Cancel a game that hasn't been joined (or expired)
+     * @dev Anyone can cancel expired games to return funds
      */
     function cancelGame(uint256 gameId) external nonReentrant {
         Game storage game = games[gameId];
         require(game.state == GameState.Created, "Cannot cancel");
-        require(game.player1 == msg.sender || block.timestamp > game.createdAt + 1 hours, "Cannot cancel yet");
+        
+        bool isCreator = game.player1 == msg.sender;
+        bool isExpired = block.timestamp > game.createdAt + gameTimeout;
+        
+        require(isCreator || isExpired, "Cannot cancel yet");
         
         game.state = GameState.Resolved;
         shellToken.safeTransfer(game.player1, game.betAmount);
         
+        if (isExpired && !isCreator) {
+            emit GameExpired(gameId, "Game timeout - no opponent joined");
+        }
         emit GameCancelled(gameId);
     }
     
     /**
      * @notice Force resolve if player1 doesn't reveal (player2 wins by forfeit)
+     * @dev Uses revealTimeout from when player2 joined
      */
     function forceResolve(uint256 gameId) external nonReentrant {
         Game storage game = games[gameId];
         require(game.state == GameState.Joined, "Game not joined");
-        require(block.timestamp > game.createdAt + 1 hours, "Too early to force");
+        require(block.timestamp > game.joinedAt + revealTimeout, "Too early to force");
         
         game.winner = game.player2;
         game.state = GameState.Resolved;
@@ -245,7 +331,45 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         
         shellToken.safeTransfer(game.player2, payout);
         
+        emit GameExpired(gameId, "Reveal timeout - player1 forfeited");
         emit GameResolved(gameId, game.player2, payout);
+    }
+    
+    // ============ TIMEOUT CONFIGURATION ============
+    
+    /**
+     * @notice Set game timeout (time before unjoined game expires)
+     */
+    function setGameTimeout(uint256 _timeout) external onlyOwner {
+        require(_timeout >= 15 minutes && _timeout <= 24 hours, "Invalid timeout");
+        gameTimeout = _timeout;
+    }
+    
+    /**
+     * @notice Set reveal timeout (time player1 has to reveal after join)
+     */
+    function setRevealTimeout(uint256 _timeout) external onlyOwner {
+        require(_timeout >= 30 minutes && _timeout <= 48 hours, "Invalid timeout");
+        revealTimeout = _timeout;
+    }
+    
+    /**
+     * @notice Check if a game has expired
+     */
+    function isGameExpired(uint256 gameId) external view returns (bool expired, string memory reason) {
+        Game storage game = games[gameId];
+        
+        if (game.state == GameState.Created) {
+            if (block.timestamp > game.createdAt + gameTimeout) {
+                return (true, "No opponent joined in time");
+            }
+        } else if (game.state == GameState.Joined) {
+            if (block.timestamp > game.joinedAt + revealTimeout) {
+                return (true, "Player1 did not reveal in time");
+            }
+        }
+        
+        return (false, "");
     }
     
     // ============ VIEW FUNCTIONS ============
@@ -261,6 +385,27 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         string memory _name
     ) {
         return (wins[agent], losses[agent], totalWagered[agent], agentNames[agent]);
+    }
+    
+    /**
+     * @notice Get full agent profile including verification status
+     */
+    function getAgentProfile(address agent) external view returns (
+        string memory name,
+        uint256 _wins,
+        uint256 _losses,
+        uint256 wagered,
+        bool canPlay,
+        bool moltbookVerified
+    ) {
+        return (
+            agentNames[agent],
+            wins[agent],
+            losses[agent],
+            totalWagered[agent],
+            verifiedAgents[agent],
+            agentStatus[agent] == VerificationStatus.Verified
+        );
     }
     
     /**
