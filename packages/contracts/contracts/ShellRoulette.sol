@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -14,6 +15,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   "In Soviet blockchain, smart contract executes YOU"
  */
 contract ShellRoulette is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+    
     IERC20 public immutable shellToken;
     
     uint256 public constant PLAYERS_PER_ROUND = 6;
@@ -227,7 +230,7 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
         }
         
         // Transfer tokens
-        require(shellToken.transferFrom(msg.sender, address(this), betAmount), "Transfer failed");
+        shellToken.safeTransferFrom(msg.sender, address(this), betAmount);
         
         // Add player
         uint8 position = round.playerCount;
@@ -289,14 +292,14 @@ contract ShellRoulette is ReentrancyGuard, Ownable {
             if (player != eliminated) {
                 survivalCount[player]++;
                 profitLoss[player] += int256(prizePerWinner) - int256(round.betAmount);
-                require(shellToken.transfer(player, prizePerWinner), "Prize transfer failed");
+                shellToken.safeTransfer(player, prizePerWinner);
                 emit AgentSurvived(roundId, player, prizePerWinner);
             }
         }
         
         // Protocol fee
         if (fee > 0) {
-            require(shellToken.transfer(owner(), fee), "Fee transfer failed");
+            shellToken.safeTransfer(owner(), fee);
         }
     }
     

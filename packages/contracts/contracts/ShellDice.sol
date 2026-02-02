@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -11,6 +12,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Uses blockhash for randomness (good enough for small bets, upgrade to VRF for production)
  */
 contract ShellDice is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+    
     IERC20 public immutable shellToken;
     
     uint256 public minBet = 1e18;           // 1 $SHELL minimum
@@ -80,7 +83,7 @@ contract ShellDice is ReentrancyGuard, Ownable {
      * @param amount Amount of $SHELL to add
      */
     function fundHouse(uint256 amount) external {
-        require(shellToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
+        shellToken.safeTransferFrom(msg.sender, address(this), amount);
         emit HouseFunded(amount);
     }
     
@@ -107,7 +110,7 @@ contract ShellDice is ReentrancyGuard, Ownable {
         require(houseBalance >= potentialPayout, "House cannot cover bet");
         
         // Transfer bet from player
-        require(shellToken.transferFrom(msg.sender, address(this), betAmount), "Transfer failed");
+        shellToken.safeTransferFrom(msg.sender, address(this), betAmount);
         
         // Generate "random" number 1-100 (use VRF in production!)
         uint8 rolledNumber = uint8((uint256(keccak256(abi.encodePacked(
@@ -125,7 +128,7 @@ contract ShellDice is ReentrancyGuard, Ownable {
             wins[msg.sender]++;
             profitLoss[msg.sender] += int256(payout - betAmount);
             houseProfitLoss -= int256(payout - betAmount);
-            require(shellToken.transfer(msg.sender, payout), "Payout failed");
+            shellToken.safeTransfer(msg.sender, payout);
         } else {
             losses[msg.sender]++;
             profitLoss[msg.sender] -= int256(betAmount);
@@ -221,7 +224,7 @@ contract ShellDice is ReentrancyGuard, Ownable {
     
     function withdrawProfit(address to, uint256 amount) external onlyOwner {
         require(int256(amount) <= houseProfitLoss, "Cannot withdraw more than profit");
-        shellToken.transfer(to, amount);
+        shellToken.safeTransfer(to, amount);
         houseProfitLoss -= int256(amount);
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -14,6 +15,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   "Settle your beef on-chain"
  */
 contract ShellCoinflip is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+    
     IERC20 public immutable shellToken;
     
     uint256 public minBet = 1e18;        // 1 $SHELL minimum
@@ -118,7 +121,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         require(commitment != bytes32(0), "Invalid commitment");
         
         // Transfer $SHELL from player
-        require(shellToken.transferFrom(msg.sender, address(this), betAmount), "Transfer failed");
+        shellToken.safeTransferFrom(msg.sender, address(this), betAmount);
         
         uint256 gameId = nextGameId++;
         games[gameId] = Game({
@@ -154,7 +157,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         }
         
         // Transfer $SHELL from player2
-        require(shellToken.transferFrom(msg.sender, address(this), game.betAmount), "Transfer failed");
+        shellToken.safeTransferFrom(msg.sender, address(this), game.betAmount);
         
         game.player2 = msg.sender;
         game.player2Choice = choice;
@@ -201,7 +204,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         totalWagered[game.player2] += game.betAmount;
         
         // Transfer winnings
-        require(shellToken.transfer(winner, payout), "Payout failed");
+        shellToken.safeTransfer(winner, payout);
         
         emit GameResolved(gameId, winner, payout);
     }
@@ -215,7 +218,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         require(game.player1 == msg.sender || block.timestamp > game.createdAt + 1 hours, "Cannot cancel yet");
         
         game.state = GameState.Resolved;
-        require(shellToken.transfer(game.player1, game.betAmount), "Refund failed");
+        shellToken.safeTransfer(game.player1, game.betAmount);
         
         emit GameCancelled(gameId);
     }
@@ -240,7 +243,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
         wins[game.player2]++;
         losses[game.player1]++;
         
-        require(shellToken.transfer(game.player2, payout), "Payout failed");
+        shellToken.safeTransfer(game.player2, payout);
         
         emit GameResolved(gameId, game.player2, payout);
     }
@@ -374,7 +377,7 @@ contract ShellCoinflip is ReentrancyGuard, Ownable {
             }
         }
         require(balance > reserved, "No fees to withdraw");
-        shellToken.transfer(to, balance - reserved);
+        shellToken.safeTransfer(to, balance - reserved);
     }
     
     function generateCommitment(uint8 choice, bytes32 secret) external pure returns (bytes32) {
