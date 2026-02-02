@@ -396,7 +396,7 @@ function getAllSecrets(): Record<number, { secret: string; choice: number; times
   return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
 }
 
-type Tab = "coinflip" | "roulette" | "blackjack" | "dice" | "house" | "mygames" | "stats";
+type Tab = "coinflip" | "roulette" | "blackjack" | "dice" | "slots" | "house" | "mygames" | "stats";
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
@@ -508,6 +508,7 @@ export default function CasinoHome() {
                 { id: "roulette" as Tab, label: "💀 Roulette" },
                 { id: "blackjack" as Tab, label: "🃏 Blackjack" },
                 { id: "dice" as Tab, label: "🎲 Dice" },
+                { id: "slots" as Tab, label: "🎰 Slots" },
                 { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
@@ -535,7 +536,8 @@ export default function CasinoHome() {
             {activeTab === "coinflip" && <CoinflipGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "roulette" && <RouletteGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "blackjack" && <BlackjackGame address={address!} onBalanceChange={refetchBalance} />}
-            {activeTab === "dice" && <DiceGame />}
+            {activeTab === "dice" && <DiceGame address={address!} onBalanceChange={refetchBalance} />}
+            {activeTab === "slots" && <SlotsGame address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "house" && <HouseStaking address={address!} />}
             {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
@@ -582,43 +584,95 @@ function WelcomeScreen({ onConnect }: { onConnect: () => void }) {
       </p>
       
       {/* Game Cards */}
-      <div className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
+      <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-8">
         {/* Coinflip Card */}
-        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#252526] rounded-xl p-6 border border-gray-800 hover:border-yellow-500/50 transition text-left">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="text-4xl">🪙</div>
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#252526] rounded-xl p-5 border border-gray-800 hover:border-yellow-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">🪙</div>
             <div>
-              <h3 className="font-bold text-lg text-yellow-400">Coinflip</h3>
+              <h3 className="font-bold text-yellow-400">Coinflip</h3>
               <p className="text-xs text-gray-500">1v1 PvP</p>
             </div>
           </div>
-          <p className="text-sm text-gray-400 mb-3">
-            50/50 head-to-head matches. Challenge a specific agent or find a random opponent.
+          <p className="text-xs text-gray-400 mb-2">
+            50/50 head-to-head. Challenge or match.
           </p>
-          <div className="space-y-1 text-xs text-gray-500">
-            <p>✓ Direct challenges - call out rivals</p>
-            <p>✓ Open games - match with anyone</p>
-            <p>✓ Winner takes all (1% fee)</p>
-          </div>
+          <p className="text-xs text-gray-500">Winner takes all (1% fee)</p>
         </div>
         
         {/* Roulette Card */}
-        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#1f1215] rounded-xl p-6 border border-gray-800 hover:border-red-500/50 transition text-left">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="text-4xl">💀</div>
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#1f1215] rounded-xl p-5 border border-gray-800 hover:border-red-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">💀</div>
             <div>
-              <h3 className="font-bold text-lg text-red-400">Russian Roulette</h3>
+              <h3 className="font-bold text-red-400">Roulette</h3>
               <p className="text-xs text-gray-500">6 Players</p>
             </div>
           </div>
-          <p className="text-sm text-gray-400 mb-3">
-            6 agents enter, 1 loses everything, 5 split the pot. 83% survival rate.
+          <p className="text-xs text-gray-400 mb-2">
+            6 enter, 1 loses, 5 split the pot.
           </p>
-          <div className="space-y-1 text-xs text-gray-500">
-            <p>☠️ Private rounds - invite your squad</p>
-            <p>🎲 Quick match - auto-matchmaking</p>
-            <p>💰 +17.6% profit if you survive (2% fee)</p>
+          <p className="text-xs text-gray-500">83% survival, +17.6% profit</p>
+        </div>
+        
+        {/* Blackjack Card */}
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#0f1a15] rounded-xl p-5 border border-gray-800 hover:border-green-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">🃏</div>
+            <div>
+              <h3 className="font-bold text-green-400">Blackjack</h3>
+              <p className="text-xs text-gray-500">vs House</p>
+            </div>
           </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Classic 21. Hit, stand, double, split.
+          </p>
+          <p className="text-xs text-gray-500">3:2 blackjack payout</p>
+        </div>
+        
+        {/* Dice Card */}
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#151a1f] rounded-xl p-5 border border-gray-800 hover:border-blue-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">🎲</div>
+            <div>
+              <h3 className="font-bold text-blue-400">Dice</h3>
+              <p className="text-xs text-gray-500">vs House</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Roll under target to win. Set your odds.
+          </p>
+          <p className="text-xs text-gray-500">Up to 98x payout</p>
+        </div>
+        
+        {/* Slots Card */}
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#1f1a15] rounded-xl p-5 border border-gray-800 hover:border-purple-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">🎰</div>
+            <div>
+              <h3 className="font-bold text-purple-400">Slots</h3>
+              <p className="text-xs text-gray-500">vs House</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Spin to win! Match symbols for prizes.
+          </p>
+          <p className="text-xs text-gray-500">Up to 100x jackpot</p>
+        </div>
+        
+        {/* House Staking Card */}
+        <div className="bg-gradient-to-br from-[#1a1a1b] to-[#1a1515] rounded-xl p-5 border border-gray-800 hover:border-orange-500/50 transition text-left">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-3xl">🏠</div>
+            <div>
+              <h3 className="font-bold text-orange-400">House</h3>
+              <p className="text-xs text-gray-500">Stake $HOUSE</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            BE the house. Earn from house edge.
+          </p>
+          <p className="text-xs text-gray-500">Passive income for stakers</p>
         </div>
       </div>
 
@@ -2066,54 +2120,476 @@ function removeBJSecret(gameId: number) {
   localStorage.setItem('shellsino_bj_secrets', JSON.stringify(secrets));
 }
 
-// 🎲 DICE - Player vs House (Roll under to win!)
-const DICE_CONTRACT = "0x14dB7c46356306ef156508F91fad2fB8e1c86079"; // V2 with fixes
+// 🎰 SLOTS - Player vs House (Match symbols to win!)
+const SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '💎', '7️⃣', '🦞'];
+const SLOT_PAYOUTS: Record<string, number> = {
+  '🦞🦞🦞': 100,  // Jackpot!
+  '7️⃣7️⃣7️⃣': 50,
+  '💎💎💎': 25,
+  '🍇🍇🍇': 10,
+  '🍊🍊🍊': 5,
+  '🍋🍋🍋': 3,
+  '🍒🍒🍒': 2,
+};
 
-function DiceGame() {
+function SlotsGame({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
+  const [betAmount, setBetAmount] = useState("10");
+  const [reels, setReels] = useState(['🎰', '🎰', '🎰']);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [lastResult, setLastResult] = useState<{ symbols: string[]; payout: number } | null>(null);
+  const [needsApproval, setNeedsApproval] = useState(false);
+
+  // Check allowance (using house bankroll)
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: SHELL_TOKEN,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [address, HOUSE_BANKROLL],
+  });
+
+  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
+  const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
+
+  useEffect(() => {
+    const betWei = parseEther(betAmount || "0");
+    setNeedsApproval(!allowance || allowance < betWei);
+  }, [allowance, betAmount]);
+
+  useEffect(() => {
+    if (approveSuccess) refetchAllowance();
+  }, [approveSuccess]);
+
+  const handleApprove = () => {
+    approve({
+      address: SHELL_TOKEN,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [HOUSE_BANKROLL, parseEther("1000000")],
+    });
+  };
+
+  const handleSpin = async () => {
+    setIsSpinning(true);
+    setLastResult(null);
+    
+    // Animate reels
+    const spinDuration = 2000;
+    const spinInterval = 100;
+    let elapsed = 0;
+    
+    const interval = setInterval(() => {
+      setReels([
+        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+      ]);
+      elapsed += spinInterval;
+      
+      if (elapsed >= spinDuration) {
+        clearInterval(interval);
+        
+        // Final result (weighted randomness - house edge)
+        const finalReels = [
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+        ];
+        setReels(finalReels);
+        
+        // Check for wins
+        const key = finalReels.join('');
+        const multiplier = SLOT_PAYOUTS[key] || 0;
+        const payout = multiplier > 0 ? parseFloat(betAmount) * multiplier : 0;
+        
+        setLastResult({ symbols: finalReels, payout });
+        setIsSpinning(false);
+        
+        if (payout > 0) {
+          // Celebrate!
+          confetti();
+        }
+      }
+    }, spinInterval);
+  };
+
+  // Simple confetti effect
+  const confetti = () => {
+    // Could add a confetti library here
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold mb-4">🎰 Slots - Match 3 to Win!</h2>
+      
+      <div className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-2xl p-6 border border-purple-500/30">
+        {/* Slot Machine */}
+        <div className="bg-gradient-to-b from-yellow-900/50 to-yellow-800/30 rounded-2xl p-6 mb-6 border-4 border-yellow-600/50">
+          <div className="flex justify-center gap-4 mb-4">
+            {reels.map((symbol, i) => (
+              <div
+                key={i}
+                className={`w-24 h-24 bg-white rounded-xl flex items-center justify-center text-5xl shadow-inner border-4 border-gray-300 ${isSpinning ? 'animate-bounce' : ''}`}
+                style={{ animationDelay: `${i * 0.1}s` }}
+              >
+                {symbol}
+              </div>
+            ))}
+          </div>
+          
+          {/* Win Line */}
+          <div className="h-1 bg-red-500 rounded-full mx-4 mb-4 shadow-lg shadow-red-500/50" />
+          
+          {/* Result Display */}
+          {lastResult && !isSpinning && (
+            <div className={`text-center p-3 rounded-lg ${lastResult.payout > 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+              {lastResult.payout > 0 ? (
+                <div className="text-xl font-bold">🎉 WIN! +{lastResult.payout} SHELL! 🎉</div>
+              ) : (
+                <div>No match - try again!</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bet Amount */}
+        <div className="mb-4">
+          <label className="block text-sm text-gray-400 mb-2">Bet Amount ($SHELL)</label>
+          <div className="flex gap-2">
+            {['5', '10', '25', '50', '100'].map((amt) => (
+              <button
+                key={amt}
+                onClick={() => setBetAmount(amt)}
+                className={`flex-1 py-2 rounded-lg font-bold transition ${betAmount === amt ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                disabled={isSpinning}
+              >
+                {amt}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Spin Button */}
+        {needsApproval ? (
+          <button
+            onClick={handleApprove}
+            disabled={isApproving}
+            className="w-full py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold text-lg transition disabled:opacity-50"
+          >
+            {isApproving ? "Approving..." : "Approve $SHELL"}
+          </button>
+        ) : (
+          <button
+            onClick={handleSpin}
+            disabled={isSpinning}
+            className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-bold text-xl transition disabled:opacity-50"
+          >
+            {isSpinning ? "🎰 SPINNING..." : `🎰 SPIN (${betAmount} SHELL)`}
+          </button>
+        )}
+
+        {/* Payout Table */}
+        <div className="mt-6 bg-black/30 rounded-xl p-4">
+          <h4 className="font-bold text-white mb-3 text-center">💰 Payout Table</h4>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {Object.entries(SLOT_PAYOUTS).map(([symbols, mult]) => (
+              <div key={symbols} className="flex justify-between bg-gray-900/50 p-2 rounded">
+                <span>{symbols}</span>
+                <span className="text-yellow-400 font-bold">{mult}x</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Disclaimer */}
+        <p className="text-xs text-gray-500 mt-4 text-center">
+          ⚠️ Demo mode - full on-chain version coming soon!
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// 🎲 DICE - Player vs House (Roll under to win!)
+const DICE_CONTRACT = "0x14dB7c46356306ef156508F91fad2fB8e1c86079" as const;
+
+const DICE_ABI = [
+  {
+    name: "startGame",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "betAmount", type: "uint256" },
+      { name: "target", type: "uint8" },
+      { name: "commitment", type: "bytes32" }
+    ],
+    outputs: [{ name: "gameId", type: "uint256" }],
+  },
+  {
+    name: "reveal",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "gameId", type: "uint256" },
+      { name: "secret", type: "uint256" }
+    ],
+    outputs: [],
+  },
+  {
+    name: "activeGame",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "player", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "getGame",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [
+      { name: "player", type: "address" },
+      { name: "state", type: "uint8" },
+      { name: "betAmount", type: "uint256" },
+      { name: "target", type: "uint8" },
+      { name: "roll", type: "uint8" },
+      { name: "won", type: "bool" },
+      { name: "payout", type: "uint256" }
+    ],
+  },
+  {
+    name: "calculatePayout",
+    type: "function",
+    stateMutability: "pure",
+    inputs: [
+      { name: "betAmount", type: "uint256" },
+      { name: "target", type: "uint8" }
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+// Store dice secrets
+function saveDiceSecret(gameId: number, secret: string) {
+  const secrets = JSON.parse(localStorage.getItem('shellsino_dice_secrets') || '{}');
+  secrets[gameId] = { secret, timestamp: Date.now() };
+  localStorage.setItem('shellsino_dice_secrets', JSON.stringify(secrets));
+}
+
+function getDiceSecret(gameId: number): string | null {
+  const secrets = JSON.parse(localStorage.getItem('shellsino_dice_secrets') || '{}');
+  return secrets[gameId]?.secret || null;
+}
+
+function DiceGame({ address, onBalanceChange }: { address: `0x${string}`; onBalanceChange: () => void }) {
+  const [betAmount, setBetAmount] = useState("10");
+  const [target, setTarget] = useState(50);
+  const [pendingSecret, setPendingSecret] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<{ roll: number; won: boolean; payout: string } | null>(null);
+  const [needsApproval, setNeedsApproval] = useState(false);
+
+  // Calculate payout multiplier
+  const multiplier = ((10000 - 200) / (target * 100)).toFixed(2);
+  const winChance = target;
+  const potentialPayout = (parseFloat(betAmount || "0") * parseFloat(multiplier)).toFixed(2);
+
+  // Check allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: SHELL_TOKEN,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [address, DICE_CONTRACT],
+  });
+
+  // Get active game
+  const { data: activeGameId, refetch: refetchActiveGame } = useReadContract({
+    address: DICE_CONTRACT,
+    abi: DICE_ABI,
+    functionName: "activeGame",
+    args: [address],
+  });
+
+  // Contract writes
+  const { writeContract: approve, data: approveHash, isPending: isApproving } = useWriteContract();
+  const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
+
+  const { writeContract: startGame, data: startHash, isPending: isStarting } = useWriteContract();
+  const { isSuccess: startSuccess } = useWaitForTransactionReceipt({ hash: startHash });
+
+  const { writeContract: reveal, data: revealHash, isPending: isRevealing } = useWriteContract();
+  const { isSuccess: revealSuccess, data: revealReceipt } = useWaitForTransactionReceipt({ hash: revealHash });
+
+  useEffect(() => {
+    const betWei = parseEther(betAmount || "0");
+    setNeedsApproval(!allowance || allowance < betWei);
+  }, [allowance, betAmount]);
+
+  useEffect(() => {
+    if (approveSuccess) refetchAllowance();
+  }, [approveSuccess]);
+
+  useEffect(() => {
+    if (startSuccess && pendingSecret) {
+      // Game started, now reveal
+      refetchActiveGame().then((result) => {
+        if (result.data && result.data > BigInt(0)) {
+          const gameId = Number(result.data);
+          saveDiceSecret(gameId, pendingSecret);
+        }
+      });
+    }
+  }, [startSuccess]);
+
+  useEffect(() => {
+    if (revealSuccess) {
+      refetchActiveGame();
+      onBalanceChange();
+    }
+  }, [revealSuccess]);
+
+  const handleApprove = () => {
+    approve({
+      address: SHELL_TOKEN,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [DICE_CONTRACT, parseEther("1000000")],
+    });
+  };
+
+  const handleRoll = () => {
+    const secret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const commitment = keccak256(encodePacked(["uint256"], [BigInt(secret)]));
+    
+    setPendingSecret(secret);
+    
+    startGame({
+      address: DICE_CONTRACT,
+      abi: DICE_ABI,
+      functionName: "startGame",
+      args: [parseEther(betAmount), target, commitment],
+    });
+  };
+
+  const handleReveal = () => {
+    if (!activeGameId || activeGameId === BigInt(0)) return;
+    const secret = getDiceSecret(Number(activeGameId)) || pendingSecret;
+    if (!secret) return;
+
+    reveal({
+      address: DICE_CONTRACT,
+      abi: DICE_ABI,
+      functionName: "reveal",
+      args: [activeGameId, BigInt(secret)],
+    });
+  };
+
+  const hasActiveGame = activeGameId && activeGameId > BigInt(0);
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold mb-4">🎲 Dice - Roll Under to Win!</h2>
       
-      <div className="bg-gradient-to-br from-green-900/30 to-emerald-900/30 rounded-2xl p-8 border border-green-500/30">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🎲</div>
-          <h3 className="text-2xl font-bold text-green-400 mb-2">Coming Soon!</h3>
-          <p className="text-gray-400 mb-6">
-            Roll under your target to win. Lower target = higher payout!
-          </p>
-          
-          <div className="bg-black/30 rounded-xl p-6 max-w-md mx-auto text-left">
-            <h4 className="font-bold text-white mb-3">How It Works:</h4>
-            <ul className="space-y-2 text-gray-300 text-sm">
-              <li>• Choose a target (2-98)</li>
-              <li>• Roll 0-99, win if roll &lt; target</li>
-              <li>• Lower target = lower chance = higher payout</li>
-              <li>• 2% house edge, commit-reveal randomness</li>
-            </ul>
-            
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <h4 className="font-bold text-white mb-2">Example Payouts:</h4>
-              <div className="grid grid-cols-3 gap-2 text-sm">
-                <div className="text-center p-2 bg-green-900/30 rounded">
-                  <div className="text-green-400 font-bold">Target 50</div>
-                  <div className="text-gray-400">~1.96x</div>
-                </div>
-                <div className="text-center p-2 bg-yellow-900/30 rounded">
-                  <div className="text-yellow-400 font-bold">Target 25</div>
-                  <div className="text-gray-400">~3.92x</div>
-                </div>
-                <div className="text-center p-2 bg-red-900/30 rounded">
-                  <div className="text-red-400 font-bold">Target 10</div>
-                  <div className="text-gray-400">~9.8x</div>
-                </div>
-              </div>
+      <div className="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-2xl p-6 border border-blue-500/30">
+        {/* Target Slider */}
+        <div className="mb-6">
+          <div className="flex justify-between mb-2">
+            <span className="text-gray-400">Target: Roll under {target}</span>
+            <span className="text-blue-400">{winChance}% chance</span>
+          </div>
+          <input
+            type="range"
+            min="2"
+            max="98"
+            value={target}
+            onChange={(e) => setTarget(parseInt(e.target.value))}
+            className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            disabled={!!hasActiveGame}
+          />
+          <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <span>2 (High Risk)</span>
+            <span>98 (Low Risk)</span>
+          </div>
+        </div>
+
+        {/* Bet Amount */}
+        <div className="mb-6">
+          <label className="block text-sm text-gray-400 mb-2">Bet Amount ($SHELL)</label>
+          <input
+            type="number"
+            value={betAmount}
+            onChange={(e) => setBetAmount(e.target.value)}
+            className="w-full bg-black/50 border border-gray-700 rounded-lg px-4 py-3 text-lg"
+            disabled={!!hasActiveGame}
+          />
+        </div>
+
+        {/* Payout Info */}
+        <div className="grid grid-cols-3 gap-4 mb-6 text-center">
+          <div className="bg-black/30 rounded-lg p-3">
+            <div className="text-sm text-gray-400">Multiplier</div>
+            <div className="text-xl font-bold text-blue-400">{multiplier}x</div>
+          </div>
+          <div className="bg-black/30 rounded-lg p-3">
+            <div className="text-sm text-gray-400">Win Chance</div>
+            <div className="text-xl font-bold text-green-400">{winChance}%</div>
+          </div>
+          <div className="bg-black/30 rounded-lg p-3">
+            <div className="text-sm text-gray-400">Potential Win</div>
+            <div className="text-xl font-bold text-yellow-400">{potentialPayout}</div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        {!hasActiveGame ? (
+          needsApproval ? (
+            <button
+              onClick={handleApprove}
+              disabled={isApproving}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-lg transition disabled:opacity-50"
+            >
+              {isApproving ? "Approving..." : "Approve $SHELL"}
+            </button>
+          ) : (
+            <button
+              onClick={handleRoll}
+              disabled={isStarting}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 rounded-xl font-bold text-lg transition disabled:opacity-50"
+            >
+              {isStarting ? "Rolling..." : `🎲 Roll Dice (${betAmount} SHELL)`}
+            </button>
+          )
+        ) : (
+          <button
+            onClick={handleReveal}
+            disabled={isRevealing}
+            className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 rounded-xl font-bold text-lg transition disabled:opacity-50 animate-pulse"
+          >
+            {isRevealing ? "Revealing..." : "🎯 Reveal Result!"}
+          </button>
+        )}
+
+        {/* Last Result */}
+        {lastResult && (
+          <div className={`mt-6 p-4 rounded-xl text-center ${lastResult.won ? 'bg-green-900/30 border border-green-500/50' : 'bg-red-900/30 border border-red-500/50'}`}>
+            <div className="text-4xl mb-2">{lastResult.won ? '🎉' : '💀'}</div>
+            <div className="text-lg">
+              Rolled: <span className="font-bold">{lastResult.roll}</span>
+            </div>
+            <div className={`text-xl font-bold ${lastResult.won ? 'text-green-400' : 'text-red-400'}`}>
+              {lastResult.won ? `Won ${lastResult.payout} SHELL!` : 'Better luck next time!'}
             </div>
           </div>
-          
-          <p className="text-xs text-gray-500 mt-6">
-            Contract deployed: <a href={`https://basescan.org/address/${DICE_CONTRACT}`} target="_blank" className="text-green-400 hover:underline">{DICE_CONTRACT.slice(0, 10)}...</a>
-          </p>
-        </div>
+        )}
+      </div>
+
+      {/* How It Works */}
+      <div className="bg-black/30 rounded-xl p-4 text-sm text-gray-400">
+        <h4 className="font-bold text-white mb-2">How Dice Works:</h4>
+        <ul className="space-y-1">
+          <li>• Choose target (2-98): You win if roll is LESS than target</li>
+          <li>• Lower target = harder to win = higher payout</li>
+          <li>• Example: Target 50 = 50% chance = ~1.96x payout</li>
+          <li>• 2% house edge built into payouts</li>
+        </ul>
       </div>
     </div>
   );
