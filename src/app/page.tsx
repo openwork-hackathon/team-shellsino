@@ -396,7 +396,7 @@ function getAllSecrets(): Record<number, { secret: string; choice: number; times
   return JSON.parse(localStorage.getItem('shellsino_secrets') || '{}');
 }
 
-type Tab = "coinflip" | "roulette" | "blackjack" | "dice" | "slots" | "house" | "mygames" | "stats";
+type Tab = "coinflip" | "roulette" | "blackjack" | "dice" | "slots" | "house" | "mygames" | "stats" | "social";
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
@@ -512,6 +512,7 @@ export default function CasinoHome() {
                 { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
+                { id: "social" as Tab, label: "🤖 Social" },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -541,6 +542,7 @@ export default function CasinoHome() {
             {activeTab === "house" && <HouseStaking address={address!} />}
             {activeTab === "mygames" && <MyGamesPage address={address!} onBalanceChange={refetchBalance} />}
             {activeTab === "stats" && <StatsPage address={address!} />}
+            {activeTab === "social" && <SocialPage address={address!} />}
           </>
         )}
       </div>
@@ -3479,6 +3481,203 @@ function StatsPage({ address }: { address: `0x${string}` }) {
       <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
         <h3 className="text-lg font-bold mb-4">⚡ Recent Activity</h3>
         <RecentGames />
+      </div>
+    </div>
+  );
+}
+
+// Social Page - Agent Directory + Battle Feed
+function SocialPage({ address }: { address: `0x${string}` }) {
+  const [feedEvents, setFeedEvents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [loadingFeed, setLoadingFeed] = useState(true);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+  const [feedFilter, setFeedFilter] = useState("all");
+  const [agentSort, setAgentSort] = useState("wins");
+
+  // Fetch feed
+  useEffect(() => {
+    setLoadingFeed(true);
+    fetch(`/api/feed?limit=15&game=${feedFilter}`)
+      .then(res => res.json())
+      .then(data => {
+        setFeedEvents(data.events || []);
+        setLoadingFeed(false);
+      })
+      .catch(() => setLoadingFeed(false));
+  }, [feedFilter]);
+
+  // Fetch agents
+  useEffect(() => {
+    setLoadingAgents(true);
+    fetch(`/api/agents?sort=${agentSort}&limit=20`)
+      .then(res => res.json())
+      .then(data => {
+        setAgents(data.agents || []);
+        setLoadingAgents(false);
+      })
+      .catch(() => setLoadingAgents(false));
+  }, [agentSort]);
+
+  const getEventIcon = (type: string) => {
+    if (type.includes("challenge")) return "⚔️";
+    if (type.includes("resolved") || type.includes("win")) return "🏆";
+    if (type.includes("eliminated") || type.includes("completed")) return "💀";
+    if (type.includes("created")) return "🪙";
+    return "🎰";
+  };
+
+  const getEventColor = (type: string) => {
+    if (type.includes("resolved") || type.includes("win")) return "text-green-400";
+    if (type.includes("challenge")) return "text-yellow-400";
+    if (type.includes("eliminated") || type.includes("completed")) return "text-red-400";
+    return "text-gray-300";
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Battle Feed */}
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <span className="animate-pulse text-red-500">●</span> Live Battle Feed
+            </h3>
+            <select
+              value={feedFilter}
+              onChange={(e) => setFeedFilter(e.target.value)}
+              className="bg-[#272729] text-white text-sm rounded px-2 py-1 border border-gray-700"
+            >
+              <option value="all">All Games</option>
+              <option value="coinflip">Coinflip</option>
+              <option value="roulette">Roulette</option>
+            </select>
+          </div>
+          
+          {loadingFeed ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse h-12 bg-[#272729] rounded" />
+              ))}
+            </div>
+          ) : feedEvents.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p className="text-2xl mb-2">🦗</p>
+              <p>No recent action... Be the first!</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {feedEvents.map((event: any, i: number) => (
+                <div key={event.id || i} className="flex gap-3 p-2 rounded hover:bg-[#272729] transition">
+                  <span className="text-xl">{getEventIcon(event.type)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm ${getEventColor(event.type)}`}>{event.description}</p>
+                    <p className="text-xs text-gray-600">Block #{event.blockNumber}</p>
+                  </div>
+                  {parseFloat(event.amount) > 0 && (
+                    <span className="text-yellow-400 text-sm font-mono">
+                      {parseFloat(event.amount).toLocaleString()} SHELL
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Agent Directory */}
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold">🤖 Agent Directory</h3>
+            <select
+              value={agentSort}
+              onChange={(e) => setAgentSort(e.target.value)}
+              className="bg-[#272729] text-white text-sm rounded px-2 py-1 border border-gray-700"
+            >
+              <option value="wins">Top Winners</option>
+              <option value="games">Most Active</option>
+              <option value="wagered">Biggest Bettors</option>
+              <option value="winRate">Best Win Rate</option>
+            </select>
+          </div>
+
+          {loadingAgents ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse h-14 bg-[#272729] rounded" />
+              ))}
+            </div>
+          ) : agents.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p className="text-2xl mb-2">🤷</p>
+              <p>No agents found</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {agents.map((agent: any, i: number) => (
+                <div 
+                  key={agent.address} 
+                  className={`flex items-center gap-3 p-2 rounded hover:bg-[#272729] transition ${
+                    agent.address.toLowerCase() === address.toLowerCase() ? "ring-1 ring-yellow-500/50" : ""
+                  }`}
+                >
+                  <span className="text-lg w-8 text-center">
+                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold truncate">{agent.name}</span>
+                      {agent.verified && <span className="text-blue-400 text-sm">✓</span>}
+                      {agent.address.toLowerCase() === address.toLowerCase() && (
+                        <span className="text-xs bg-yellow-500/20 text-yellow-400 px-1 rounded">YOU</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 font-mono">
+                      {agent.address.slice(0, 6)}...{agent.address.slice(-4)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div>
+                      <span className="text-green-400 font-semibold">{agent.stats.totalWins}W</span>
+                      <span className="text-gray-500 mx-1">/</span>
+                      <span className="text-red-400">{agent.stats.totalLosses}L</span>
+                    </div>
+                    <span className="text-xs text-gray-500">{agent.stats.winRate}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 pt-3 border-t border-gray-700 text-xs text-gray-500 flex justify-between">
+            <span>{agents.length} agents</span>
+            <a href="/api/agents" target="_blank" className="text-blue-400 hover:underline">
+              API ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* API Info Box */}
+      <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+        <h3 className="text-lg font-bold mb-4">🔌 Agent API</h3>
+        <p className="text-gray-400 text-sm mb-4">
+          Shellsino has a full REST API for programmatic access. Challenge other agents, register webhooks, and more!
+        </p>
+        <div className="grid md:grid-cols-3 gap-3 text-sm">
+          <a href="/api" target="_blank" className="block p-3 bg-[#272729] rounded hover:bg-[#333] transition">
+            <span className="text-yellow-400 font-mono">GET /api</span>
+            <p className="text-gray-500 text-xs mt-1">API Documentation</p>
+          </a>
+          <a href="/api/agents" target="_blank" className="block p-3 bg-[#272729] rounded hover:bg-[#333] transition">
+            <span className="text-green-400 font-mono">GET /api/agents</span>
+            <p className="text-gray-500 text-xs mt-1">Agent Directory</p>
+          </a>
+          <a href="/api/feed" target="_blank" className="block p-3 bg-[#272729] rounded hover:bg-[#333] transition">
+            <span className="text-blue-400 font-mono">GET /api/feed</span>
+            <p className="text-gray-500 text-xs mt-1">Live Battle Feed</p>
+          </a>
+        </div>
       </div>
     </div>
   );
