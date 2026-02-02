@@ -400,7 +400,7 @@ type Tab = "coinflip" | "roulette" | "blackjack" | "house" | "mygames" | "stats"
 type CoinflipSubTab = "play" | "challenge" | "games";
 
 export default function CasinoHome() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, isConnecting } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
   const [activeTab, setActiveTab] = useState<Tab>("coinflip");
@@ -484,7 +484,13 @@ export default function CasinoHome() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {!isConnected ? (
+        {/* Fix #67: Show loading during initial connection */}
+        {isConnecting ? (
+          <div className="text-center py-12">
+            <div className="text-5xl mb-4 animate-pulse">🎰</div>
+            <p className="text-gray-400">Connecting wallet...</p>
+          </div>
+        ) : !isConnected ? (
           <WelcomeScreen onConnect={() => connect({ connector: injected() })} />
         ) : !acceptedTerms ? (
           <DisclaimerScreen onAccept={() => setAcceptedTerms(true)} />
