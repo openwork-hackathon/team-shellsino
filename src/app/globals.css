@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Mobile responsive tabs */
+.tabs-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cards - smaller on mobile */
+@media (max-width: 640px) {
+  .card-small {
+    width: 3rem !important;
+    height: 4.5rem !important;
+  }
+  .card-small span {
+    font-size: 0.875rem !important;
+  }
+}

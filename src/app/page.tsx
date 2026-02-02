@@ -496,7 +496,7 @@ export default function CasinoHome() {
         ) : (
           <>
             {/* Tab Navigation */}
-            <div className="flex gap-1 mb-6 border-b border-gray-800">
+            <div className="tabs-container flex gap-1 mb-6 border-b border-gray-800 pb-px">
               {[
                 { id: "coinflip" as Tab, label: "🪙 Coinflip" },
                 { id: "roulette" as Tab, label: "💀 Roulette" },
@@ -1985,14 +1985,14 @@ function getCardDisplay(cardIndex: number): { rank: string; suit: string; color:
 function CardComponent({ cardIndex, faceDown = false }: { cardIndex: number; faceDown?: boolean }) {
   if (faceDown) {
     return (
-      <div className="w-16 h-24 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg border-2 border-blue-400 flex items-center justify-center shadow-lg">
+      <div className="w-12 h-18 sm:w-16 sm:h-24 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg border-2 border-blue-400 flex items-center justify-center shadow-lg">
         <span className="text-2xl">🂠</span>
       </div>
     );
   }
   const { rank, suit, color } = getCardDisplay(cardIndex);
   return (
-    <div className="w-16 h-24 bg-white rounded-lg border-2 border-gray-300 flex flex-col items-center justify-center shadow-lg">
+    <div className="w-12 h-18 sm:w-16 sm:h-24 bg-white rounded-lg border-2 border-gray-300 flex flex-col items-center justify-center shadow-lg">
       <span className={`text-xl font-bold ${color}`}>{rank}</span>
       <span className={`text-2xl ${color}`}>{suit}</span>
     </div>
