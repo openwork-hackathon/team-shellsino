@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -14,7 +15,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   🪙 SHELL COINFLIP V3 🪙
  *   "No waiting. Just flipping."
  */
-contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
+contract ShellCoinflipV3 is ReentrancyGuard, Pausable, Ownable {
     using SafeERC20 for IERC20;
     
     IERC20 public immutable shellToken;
@@ -74,8 +75,15 @@ contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
     event ChallengeCancelled(uint256 indexed challengeId);
     event AgentVerified(address indexed agent, string name);
     event AgentVerifiedByMoltbook(address indexed agent, address indexed verifier);
+    event ProtocolFeeUpdated(uint256 oldFee, uint256 newFee);
+    event ChallengeTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
+    event VerifierUpdated(address indexed verifier, bool status);
+    event SupportedBetAdded(uint256 amount);
+    event SupportedBetRemoved(uint256 amount);
+    event FeesWithdrawn(address indexed to, uint256 amount);
     
     constructor(address _shellToken) Ownable(msg.sender) {
+        require(_shellToken != address(0), "Invalid token address");
         shellToken = IERC20(_shellToken);
         verifiers[msg.sender] = true;
         
@@ -134,7 +142,8 @@ contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
     function enterPool(uint256 betAmount, uint8 choice) 
         external 
         onlyVerifiedAgent 
-        nonReentrant 
+        nonReentrant
+        whenNotPaused 
         returns (bool matched, address opponent, address winner) 
     {
         require(isSupportedBet[betAmount], "Unsupported bet amount");
@@ -277,7 +286,8 @@ contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
     function createChallenge(address challenged, uint256 betAmount, uint8 choice) 
         external 
         onlyVerifiedAgent 
-        nonReentrant 
+        nonReentrant
+        whenNotPaused 
         returns (uint256 challengeId) 
     {
         require(challenged != address(0) && challenged != msg.sender, "Invalid opponent");
@@ -451,30 +461,50 @@ contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
     }
     
     function addSupportedBet(uint256 amount) external onlyOwner {
+        require(amount > 0, "Invalid amount");
         _addSupportedBet(amount);
+        emit SupportedBetAdded(amount);
     }
     
     function removeSupportedBet(uint256 amount) external onlyOwner {
         require(matchingPool[amount] == address(0), "Pool not empty");
         isSupportedBet[amount] = false;
+        emit SupportedBetRemoved(amount);
         // Note: doesn't remove from array, just disables
     }
     
     function setProtocolFee(uint256 _feeBps) external onlyOwner {
         require(_feeBps <= 500, "Fee too high");
+        uint256 oldFee = protocolFeeBps;
         protocolFeeBps = _feeBps;
+        emit ProtocolFeeUpdated(oldFee, _feeBps);
     }
     
     function setChallengeTimeout(uint256 _timeout) external onlyOwner {
         require(_timeout >= 1 minutes && _timeout <= 1 hours, "Invalid timeout");
+        uint256 oldTimeout = challengeTimeout;
         challengeTimeout = _timeout;
+        emit ChallengeTimeoutUpdated(oldTimeout, _timeout);
     }
     
     function setVerifier(address verifier, bool status) external onlyOwner {
+        require(verifier != address(0), "Invalid verifier address");
         verifiers[verifier] = status;
+        emit VerifierUpdated(verifier, status);
+    }
+    
+    /// @notice Pause the contract (emergency stop)
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    /// @notice Unpause the contract
+    function unpause() external onlyOwner {
+        _unpause();
     }
     
     function withdrawFees(address to) external onlyOwner {
+        require(to != address(0), "Invalid recipient");
         uint256 balance = shellToken.balanceOf(address(this));
         
         // Calculate reserved amounts (pools + pending challenges)
@@ -487,6 +517,8 @@ contract ShellCoinflipV3 is ReentrancyGuard, Ownable {
         // Note: Would need to track pending challenges too for full accuracy
         
         require(balance > reserved, "No fees to withdraw");
-        shellToken.safeTransfer(to, balance - reserved);
+        uint256 withdrawAmount = balance - reserved;
+        shellToken.safeTransfer(to, withdrawAmount);
+        emit FeesWithdrawn(to, withdrawAmount);
     }
 }

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -14,7 +15,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   💀 SHELL ROULETTE V2 💀
  *   "Enter. Match. Survive."
  */
-contract ShellRouletteV2 is ReentrancyGuard, Ownable {
+contract ShellRouletteV2 is ReentrancyGuard, Pausable, Ownable {
     using SafeERC20 for IERC20;
     
     IERC20 public immutable shellToken;
@@ -70,8 +71,12 @@ contract ShellRouletteV2 is ReentrancyGuard, Ownable {
     event ChamberSpun(uint256 indexed roundId, address indexed eliminated, address[5] survivors, uint256 prizePerSurvivor);
     event AgentVerified(address indexed agent, string name);
     event AgentVerifiedByMoltbook(address indexed agent, address indexed verifier);
+    event ProtocolFeeUpdated(uint256 oldFee, uint256 newFee);
+    event VerifierUpdated(address indexed verifier, bool status);
+    event FeesWithdrawn(address indexed to, uint256 amount);
     
     constructor(address _shellToken) Ownable(msg.sender) {
+        require(_shellToken != address(0), "Invalid token address");
         shellToken = IERC20(_shellToken);
         verifiers[msg.sender] = true;
         
@@ -130,7 +135,8 @@ contract ShellRouletteV2 is ReentrancyGuard, Ownable {
     function enterChamber(uint256 betAmount) 
         external 
         onlyVerifiedAgent 
-        nonReentrant 
+        nonReentrant
+        whenNotPaused 
         returns (bool triggered, address eliminated) 
     {
         require(isSupportedBet[betAmount], "Use a supported bet tier");
@@ -353,11 +359,48 @@ contract ShellRouletteV2 is ReentrancyGuard, Ownable {
     }
     
     function addSupportedBet(uint256 amount) external onlyOwner {
+        require(amount > 0, "Invalid amount");
         _addSupportedBet(amount);
     }
     
     function setProtocolFee(uint256 _feeBps) external onlyOwner {
         require(_feeBps <= 500, "Max 5% fee");
+        uint256 oldFee = protocolFeeBps;
         protocolFeeBps = _feeBps;
+        emit ProtocolFeeUpdated(oldFee, _feeBps);
+    }
+    
+    function setVerifierStatus(address verifier, bool status) external onlyOwner {
+        require(verifier != address(0), "Invalid verifier address");
+        verifiers[verifier] = status;
+        emit VerifierUpdated(verifier, status);
+    }
+    
+    /// @notice Pause the contract (emergency stop)
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    /// @notice Unpause the contract
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+    
+    /// @notice Withdraw accumulated fees
+    function withdrawFees(address to) external onlyOwner {
+        require(to != address(0), "Invalid recipient");
+        uint256 balance = shellToken.balanceOf(address(this));
+        
+        // Calculate reserved amounts (all waiting pools)
+        uint256 reserved = 0;
+        for (uint256 i = 0; i < supportedBets.length; i++) {
+            uint256 bet = supportedBets[i];
+            reserved += waitingPlayers[bet].length * bet;
+        }
+        
+        require(balance > reserved, "No fees to withdraw");
+        uint256 withdrawAmount = balance - reserved;
+        shellToken.safeTransfer(to, withdrawAmount);
+        emit FeesWithdrawn(to, withdrawAmount);
     }
 }
