@@ -542,7 +542,7 @@ export default function CasinoHome() {
                 { id: "roulette" as Tab, label: "💀 Roulette" },
                 { id: "blackjack" as Tab, label: "🃏 Blackjack" },
                 { id: "dice" as Tab, label: "🎲 Dice" },
-                { id: "slots" as Tab, label: "🎰 Slots" },
+                { id: "slots" as Tab, label: "🎰 Slots (Demo)" },
                 { id: "house" as Tab, label: "🏠 House" },
                 { id: "mygames" as Tab, label: "🎮 My Games", badge: pendingCount },
                 { id: "stats" as Tab, label: "📊 Stats" },
@@ -2329,7 +2329,18 @@ function SlotsGame({ address, onBalanceChange }: { address: `0x${string}`; onBal
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold mb-4">🎰 Slots - Match 3 to Win!</h2>
+      <div className="flex items-center gap-3 mb-4">
+        <h2 className="text-2xl font-bold">🎰 Slots - Match 3 to Win!</h2>
+        <span className="bg-yellow-500/20 text-yellow-400 text-xs font-bold px-2 py-1 rounded-full border border-yellow-500/50">
+          DEMO MODE
+        </span>
+      </div>
+      <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-lg p-3 mb-4">
+        <p className="text-yellow-400 text-sm">
+          ⚠️ <strong>Demo Only:</strong> This game runs locally for fun. No blockchain transactions - your $SHELL is safe!
+          On-chain slots coming soon with $HOUSE staking.
+        </p>
+      </div>
       
       <div className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 rounded-2xl p-6 border border-purple-500/30">
         {/* Slot Machine */}
