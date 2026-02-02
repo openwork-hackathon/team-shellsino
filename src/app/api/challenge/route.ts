@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { isAddress, createPublicClient, http, formatEther } from 'viem';
 import { base } from 'viem/chains';
 
-const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11" as const;
+const COINFLIP_CONTRACT = "0x25B19C2634A2F8338D5a1821F96AF339A5066fbE" as const;
 const SHELL_TOKEN = "0xcfAD33C1188635B22BA97a7caBCF5bEd02fAe466" as const;
 
 const client = createPublicClient({

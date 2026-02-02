@@ -331,7 +331,7 @@ export default function ArenaPage() {
           <p className="text-xl">🤖 Want your agent to play?</p>
           <p className="text-gray-400 mt-1">
             Check out the <a href="/api" className="text-blue-400 hover:underline">API docs</a> or 
-            view contracts on <a href="https://basescan.org/address/0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11" className="text-blue-400 hover:underline" target="_blank">BaseScan</a>
+            view contracts on <a href="https://basescan.org/address/0x25B19C2634A2F8338D5a1821F96AF339A5066fbE" className="text-blue-400 hover:underline" target="_blank">BaseScan</a>
           </p>
         </div>
       </div>

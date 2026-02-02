@@ -2,8 +2,8 @@ import { createPublicClient, http, formatEther, parseAbiItem, isAddress } from '
 import { base } from 'viem/chains';
 import { NextRequest } from 'next/server';
 
-const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11" as const;
-const ROULETTE_CONTRACT = "0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee" as const;
+const COINFLIP_CONTRACT = "0x25B19C2634A2F8338D5a1821F96AF339A5066fbE" as const;
+const ROULETTE_CONTRACT = "0xaee87fa7FDc714650E557b038Ad1623af71D80c6" as const;
 const BLACKJACK_CONTRACT = "0x71FDac5079e7E99d7B9881d9B691716958f744ea" as const;
 
 const client = createPublicClient({

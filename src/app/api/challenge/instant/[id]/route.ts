@@ -151,7 +151,7 @@ export async function POST(
         message: `✅ Your challenge was accepted! Submit on-chain now.`,
         // Instructions for on-chain submission
         onChainInstructions: {
-          contract: '0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11', // V3 when deployed
+          contract: '0x25B19C2634A2F8338D5a1821F96AF339A5066fbE', // V3 when deployed
           method: 'createChallenge',
           args: [challenge.challenged, challenge.amount, challenge.choice],
         },

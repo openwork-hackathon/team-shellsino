@@ -1,7 +1,7 @@
 // Contract addresses - DEPLOYED on Base!
 export const SHELL_TOKEN = "0xcfAD33C1188635B22BA97a7caBCF5bEd02fAe466" as const;
-export const COINFLIP_CONTRACT = "0x67e894ee7c3e76B7995ef3A5Fee430c7393c8D11" as const;
-export const ROULETTE_CONTRACT = "0xdF8E88d90c5D6C0A0a3bF695fb145B905593B7ee" as const;
+export const COINFLIP_CONTRACT = "0x25B19C2634A2F8338D5a1821F96AF339A5066fbE" as const;
+export const ROULETTE_CONTRACT = "0xaee87fa7FDc714650E557b038Ad1623af71D80c6" as const;
 export const HOUSE_BANKROLL = "0x1BB36A7BdF4eAa8321bbB177EaFc1cf26c7E573f" as const;
 export const HOUSE_TOKEN = "0x759a72ea84e5cc7f04a59830ec8a824b036bfc8b" as const;
 export const BLACKJACK_CONTRACT = "0x71FDac5079e7E99d7B9881d9B691716958f744ea" as const; // V3 with fixes
