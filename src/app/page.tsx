@@ -851,6 +851,8 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
   const [challengeAddress, setChallengeAddress] = useState("");
   const [showCreateSuccess, setShowCreateSuccess] = useState(false);
   const [lastCreatedGameId, setLastCreatedGameId] = useState<number | null>(null);
+  // Fix #66: Store pending secret until we get real gameId
+  const [pendingSecret, setPendingSecret] = useState<{ secret: string; choice: number } | null>(null);
 
   // Check allowance
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -898,11 +900,27 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
     if (approveSuccess) refetchAllowance();
   }, [approveSuccess]);
 
+  // Read game counter to get real gameId after create
+  const { data: gameCounter, refetch: refetchCounter } = useReadContract({
+    address: COINFLIP_CONTRACT,
+    abi: COINFLIP_ABI,
+    functionName: "totalGamesPlayed",
+  });
+
   useEffect(() => {
     if (createSuccess || joinSuccess || challengeSuccess) {
       refetchGames();
       onBalanceChange();
       if (createSuccess || challengeSuccess) {
+        // Fix #66: Save secret with real gameId from counter
+        refetchCounter().then((result) => {
+          if (pendingSecret && result.data) {
+            const realGameId = Number(result.data);
+            saveGameSecret(realGameId, pendingSecret.secret, pendingSecret.choice);
+            setLastCreatedGameId(realGameId);
+            setPendingSecret(null);
+          }
+        });
         setShowCreateSuccess(true);
         setTimeout(() => setShowCreateSuccess(false), 5000);
       }
@@ -928,11 +946,8 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
     const randomSecret = toHex(crypto.getRandomValues(new Uint8Array(32)));
     const commitment = keccak256(encodePacked(["uint8", "bytes32"], [selectedChoice, randomSecret as `0x${string}`]));
     
-    // We'll save the secret after the tx confirms via event or use a placeholder
-    // For now, save with a temp game ID that will be updated
-    const tempId = Date.now();
-    saveGameSecret(tempId, randomSecret, selectedChoice);
-    setLastCreatedGameId(tempId);
+    // Fix #66: Store pending secret, will save with real gameId after tx confirms
+    setPendingSecret({ secret: randomSecret, choice: selectedChoice });
     
     createGame({
       address: COINFLIP_CONTRACT,
@@ -951,9 +966,8 @@ function CoinflipGame({ address, onBalanceChange }: { address: `0x${string}`; on
     const randomSecret = toHex(crypto.getRandomValues(new Uint8Array(32)));
     const commitment = keccak256(encodePacked(["uint8", "bytes32"], [selectedChoice, randomSecret as `0x${string}`]));
     
-    const tempId = Date.now();
-    saveGameSecret(tempId, randomSecret, selectedChoice);
-    setLastCreatedGameId(tempId);
+    // Fix #66: Store pending secret, will save with real gameId after tx confirms
+    setPendingSecret({ secret: randomSecret, choice: selectedChoice });
     
     challengeAgent({
       address: COINFLIP_CONTRACT,
