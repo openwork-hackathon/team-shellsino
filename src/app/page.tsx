@@ -2745,6 +2745,9 @@ function HouseStaking({ address }: { address: `0x${string}` }) {
 }
 
 function StatsPage({ address }: { address: `0x${string}` }) {
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const { data: totalGames } = useReadContract({
     address: COINFLIP_CONTRACT,
     abi: COINFLIP_ABI,
@@ -2764,58 +2767,131 @@ function StatsPage({ address }: { address: `0x${string}` }) {
     args: [address],
   });
 
+  const { data: rouletteStats } = useReadContract({
+    address: ROULETTE_CONTRACT,
+    abi: ROULETTE_ABI,
+    functionName: "totalRoundsPlayed",
+  });
+
+  const { data: rouletteEliminated } = useReadContract({
+    address: ROULETTE_CONTRACT,
+    abi: ROULETTE_ABI,
+    functionName: "totalEliminated",
+  });
+
+  // Fetch leaderboard
+  useEffect(() => {
+    fetch('/api/leaderboard')
+      .then(res => res.json())
+      .then(data => {
+        setLeaderboard(data.topWinners || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      {/* Platform Stats */}
-      <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
-        <h3 className="text-lg font-bold mb-4">📊 Platform Stats</h3>
-        <div className="space-y-3">
-          <div className="flex justify-between p-3 bg-[#272729] rounded">
-            <span className="text-gray-400">Total Games</span>
-            <span className="font-bold">{Number(totalGames || 0).toLocaleString()}</span>
+    <div className="space-y-6">
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Platform Stats */}
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <h3 className="text-lg font-bold mb-4">📊 Platform Stats</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between p-3 bg-[#272729] rounded">
+              <span className="text-gray-400">Coinflip Games</span>
+              <span className="font-bold">{Number(totalGames || 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between p-3 bg-[#272729] rounded">
+              <span className="text-gray-400">Roulette Rounds</span>
+              <span className="font-bold">{Number(rouletteStats || 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between p-3 bg-[#272729] rounded">
+              <span className="text-gray-400">Roulette Deaths</span>
+              <span className="font-bold text-red-400">{Number(rouletteEliminated || 0)} 💀</span>
+            </div>
+            <div className="flex justify-between p-3 bg-[#272729] rounded">
+              <span className="text-gray-400">Total Volume</span>
+              <span className="font-bold text-yellow-400">
+                {parseFloat(formatEther(totalVolume || BigInt(0))).toFixed(2)} $SHELL
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between p-3 bg-[#272729] rounded">
-            <span className="text-gray-400">Total Volume</span>
-            <span className="font-bold text-red-400">
-              {parseFloat(formatEther(totalVolume || BigInt(0))).toFixed(2)} $SHELL
-            </span>
-          </div>
-          <div className="flex justify-between p-3 bg-[#272729] rounded">
-            <span className="text-gray-400">Protocol Fee</span>
-            <span className="font-bold">1%</span>
+        </div>
+
+        {/* Your Stats */}
+        <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
+          <h3 className="text-lg font-bold mb-4">🎮 Your Stats</h3>
+          <div className="space-y-3">
+            {myStats ? (
+              <>
+                <div className="flex justify-between p-3 bg-[#272729] rounded">
+                  <span className="text-gray-400">Agent Name</span>
+                  <span className="font-bold">{myStats[3] || "Unknown"}</span>
+                </div>
+                <div className="flex justify-between p-3 bg-[#272729] rounded">
+                  <span className="text-gray-400">Coinflip Record</span>
+                  <span>
+                    <span className="text-green-400 font-bold">{Number(myStats[0])}W</span>
+                    {" / "}
+                    <span className="text-red-400 font-bold">{Number(myStats[1])}L</span>
+                  </span>
+                </div>
+                <div className="flex justify-between p-3 bg-[#272729] rounded">
+                  <span className="text-gray-400">Win Rate</span>
+                  <span className="font-bold">
+                    {Number(myStats[0]) + Number(myStats[1]) > 0 
+                      ? ((Number(myStats[0]) / (Number(myStats[0]) + Number(myStats[1]))) * 100).toFixed(1)
+                      : '0'}%
+                  </span>
+                </div>
+                <div className="flex justify-between p-3 bg-[#272729] rounded">
+                  <span className="text-gray-400">Total Wagered</span>
+                  <span className="font-bold text-yellow-400">
+                    {parseFloat(formatEther(myStats[2] || BigInt(0))).toFixed(2)} $SHELL
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="text-gray-500 text-center py-4">No stats yet - play some games!</p>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Your Stats */}
+      {/* Leaderboard */}
       <div className="bg-[#1a1a1b] rounded-lg p-5 border border-gray-800">
-        <h3 className="text-lg font-bold mb-4">🎮 Your Stats</h3>
-        <div className="space-y-3">
-          {myStats ? (
-            <>
-              <div className="flex justify-between p-3 bg-[#272729] rounded">
-                <span className="text-gray-400">Agent Name</span>
-                <span className="font-bold">{myStats[3] || "Unknown"}</span>
+        <h3 className="text-lg font-bold mb-4">🏆 Leaderboard</h3>
+        {loading ? (
+          <p className="text-gray-500 text-center py-4">Loading...</p>
+        ) : leaderboard.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">No agents ranked yet. Be the first!</p>
+        ) : (
+          <div className="space-y-2">
+            {leaderboard.map((agent, i) => (
+              <div key={agent.address} className="flex items-center justify-between p-3 bg-[#272729] rounded">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                  </span>
+                  <div>
+                    <div className="font-bold">{agent.name}</div>
+                    <div className="text-xs text-gray-500 font-mono">
+                      {agent.address.slice(0, 6)}...{agent.address.slice(-4)}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold">
+                    <span className="text-green-400">{agent.wins}W</span>
+                    {' / '}
+                    <span className="text-red-400">{agent.losses}L</span>
+                  </div>
+                  <div className="text-xs text-gray-500">{agent.winRate}% win rate</div>
+                </div>
               </div>
-              <div className="flex justify-between p-3 bg-[#272729] rounded">
-                <span className="text-gray-400">Record</span>
-                <span>
-                  <span className="text-green-400 font-bold">{Number(myStats[0])}W</span>
-                  {" / "}
-                  <span className="text-red-400 font-bold">{Number(myStats[1])}L</span>
-                </span>
-              </div>
-              <div className="flex justify-between p-3 bg-[#272729] rounded">
-                <span className="text-gray-400">Total Wagered</span>
-                <span className="font-bold text-yellow-400">
-                  {parseFloat(formatEther(myStats[2] || BigInt(0))).toFixed(2)} $SHELL
-                </span>
-              </div>
-            </>
-          ) : (
-            <p className="text-gray-500 text-center py-4">No stats yet</p>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
